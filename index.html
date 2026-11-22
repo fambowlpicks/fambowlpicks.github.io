@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Family Bowl Pick'em</title>
+<style>
+  :root{--bg:#f6f4ef;--card:#fff;--ink:#16181d;--muted:#5d6270;--line:#e2ded4;--brand:#7a1f1f;--gold:#e0a920;--win:#1f7a3a;--winbg:#e3f4e8;--loss:#b3261e;--lossbg:#fbe4e2;--pend:#8a6d00;--pendbg:#fff5cc}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);font-size:18px;line-height:1.4}
+  header{background:var(--brand);color:#fff;padding:14px 16px 10px;position:sticky;top:0;z-index:20}
+  header h1{margin:0 0 10px;font-size:24px}
+  nav{display:flex;gap:8px;flex-wrap:wrap}
+  nav a{color:#fff;text-decoration:none;font-weight:700;padding:10px 16px;border-radius:10px;background:rgba(255,255,255,.14);font-size:17px}
+  nav a.on{background:#fff;color:var(--brand)}
+  .sim{background:#fff8e6;border-bottom:1px solid var(--line);padding:10px 16px;font-size:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .sim select{font-size:16px;padding:6px 8px;border-radius:8px}
+  main{max-width:1000px;margin:0 auto;padding:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+  h2{margin:4px 0 12px;font-size:24px}
+  .banner{background:#16181d;color:#fff;border-radius:12px;padding:12px 16px;font-weight:700;margin-bottom:16px}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left}
+  th{font-size:15px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+  .num{text-align:center}
+  .rank{font-weight:800;font-size:20px;width:52px;text-align:center}
+  .r1{color:#b8860b}.r2{color:#6b7280}.r3{color:#8b5a2b}
+  a.person{color:var(--brand);font-weight:700;text-decoration:none}
+  a.person:hover{text-decoration:underline}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chips a{padding:10px 14px;border-radius:10px;background:#fff;border:2px solid var(--line);color:var(--ink);text-decoration:none;font-weight:700}
+  .chips a.on{border-color:var(--brand);color:var(--brand)}
+  .big{display:flex;gap:16px;flex-wrap:wrap}
+  .stat{flex:1;min-width:140px;background:#faf8f3;border:1px solid var(--line);border-radius:12px;padding:12px}
+  .stat .v{font-size:36px;font-weight:800}
+  .stat .l{color:var(--muted);font-size:15px}
+  .w{background:var(--winbg);color:var(--win);font-weight:700}
+  .l{}
+  .x{background:var(--lossbg);color:var(--loss);font-weight:700}
+  .p{background:var(--pendbg);color:var(--pend);font-weight:700}
+  .tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:14px;font-weight:700}
+  .cfp{background:#1d3b75;color:#fff}
+  .scroll{overflow:auto;max-height:75vh;border:1px solid var(--line);border-radius:12px;background:#fff}
+  .grid{font-size:14px;border-collapse:separate;border-spacing:0}
+  .grid th,.grid td{padding:6px 8px;white-space:nowrap;border-bottom:1px solid var(--line);border-right:1px solid var(--line)}
+  .grid thead th{position:sticky;top:0;background:#16181d;color:#fff;z-index:2;text-transform:none;letter-spacing:0}
+  .grid tbody th{position:sticky;left:0;background:#fff;z-index:1;color:var(--ink);text-transform:none;letter-spacing:0;font-weight:600}
+  .grid thead th:first-child{left:0;z-index:3}
+  .muted{color:var(--muted)}
+  .root{border-left:5px solid var(--gold)}
+  .btn{font:inherit;font-size:16px;font-weight:700;padding:10px 14px;border-radius:10px;border:2px solid var(--brand);background:var(--brand);color:#fff;cursor:pointer}
+  .btn.ghost{background:#fff;color:var(--brand)}
+  .btn.pick{background:#fff;color:var(--ink);border-color:var(--line)}
+  .btn.pick.sel{background:var(--winbg);color:var(--win);border-color:var(--win)}
+  .btn.ghost.selp{background:var(--pendbg);color:var(--pend);border-color:var(--pend)}
+  .inp{font:inherit;padding:10px 12px;border-radius:10px;border:2px solid var(--line);margin:0 8px 8px 0}
+  @media(max-width:600px){body{font-size:17px}.hide-sm{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🏈 Family Bowl Pick'em</h1>
+  <nav id="nav"></nav>
+</header>
+<div class="sim">
+  <b>Test mode:</b> using last season's games. Show standings after
+  <select id="asof"></select>
+</div>
+<main id="app"></main>
+<footer style="text-align:center;padding:20px;font-size:14px"><a href="#/admin" style="color:var(--muted)">Admin</a></footer>
+
+<script>
+// ---------- DATA (last season, from the family spreadsheet) ----------
+const PEOPLE = ["DERRICK","LANCE","PARKER","JIMMY","MATT","LANDON","NANA","MICHELLE","ANDI","ALLY","NAT","REAGAN","JERRICKA","BRAYLON","KASH","JAIME","DALE","ASHTON","BRYANA","EMERY"];
+const OT_GUESS = [3,5,4,1,0,3,4,3,2,6,3,6,4,7,13,2,3,6,6,6];
+const ACTUAL_OT = 3;
+
+// [date, time, bowl, teamA, teamB, winner(A/H), tv, pts, round, picks]
+// picks: one char per person in PEOPLE order — A = first team, H = second team; arrays allow other team names
+const G = [
+["12/13","12:00","Cricket Celebration Bowl","SC State","Prairie View","A","ABC",5,"","HHAAAHHAAAHAHAHAAAAA"],
+["12/13","3:00","America's Game","Army","Navy","H","CBS",5,"","HHHHHHHHAHHHHHHHHHHH"],
+["12/13","8:00","Bucked Up LA Bowl","Boise State","Washington","H","ABC",5,"","HHHHHAAAAHAAHHAHHHAA"],
+["12/16","9:00","IS4S Salute To Veterans Bowl","Troy","Jax State","H","ESPN",5,"","HHAHAHHHHHHHAAHHAHHH"],
+["12/17","5:00","StaffDNA Cure Bowl","Old Dominion","South Florida","A","ESPN",5,"","HAHHHHAHHHAHHHHAAHAH"],
+["12/17","8:30","68 Ventures Bowl","Louisiana","Delaware","H","ESPN",5,"","AHAAHAAAAAAAHAAAAAHA"],
+["12/18","9:00","Xbox Bowl","Missouri State","Arkansas State","H","ESPN2",5,"","AAHAAAAHAAAHAHAAAAHA"],
+["12/19","11:00a","Myrtle Beach Bowl","Kennesaw State","Western Michigan","H","ESPN",5,"","HHHHHAHAHHAAHHAHHAAA"],
+["12/19","2:30","Gasparilla Bowl","Memphis","NC State","H","ESPN",5,"","HAAAAAAHHHAHAHAAHHAA"],
+["12/19","8:00","CFP First Round","Alabama","Oklahoma","A","ABC",7,"CFP R1","AHHAHAAAHAAAAAHAHAHA"],
+["12/20","12:00","CFP First Round","Miami","Texas A&M","A","ABC",7,"CFP R1","AHHAAAHHHHHHHAHHHHHH"],
+["12/20","3:30","CFP First Round","Tulane","Ole Miss","H","TNT",7,"CFP R1","HHHHHHHHHHHHHHHAAHHH"],
+["12/20","7:30","CFP First Round","James Madison","Oregon","H","TNT",7,"CFP R1","HHHHHHHHHHHHHHAHHHAH"],
+["12/22","2:00","Famous Idaho Potato Bowl","Washington State","Utah State","A","ESPN",5,"","HHAAHAAHAHAHHAHAAHHA"],
+["12/23","2:00","Boca Raton Bowl","Toledo","Louisville","H","ESPN",5,"","HHHHHHAHHAHHHHAAHHAA"],
+["12/23","5:30","New Orleans Bowl","Western Kentucky","Southern Miss","A","ESPN",5,"","AHHAAAAAHAAAAAHAHAAA"],
+["12/23","9:00","Frisco Bowl","UNLV","Ohio","H","ESPN",5,"","AHHAAHHHHHAAHAHHAHAH"],
+["12/24","8:00","Hawai'i Bowl","California","Hawai'i","H","ESPN",5,"","HHHHAHHHHAHAHAHHHHHA"],
+["12/26","1:00","GameAbove Sports Bowl","Central Michigan","Northwestern","H","ESPN",5,"","HHHHHHAHHAHHAHAHHAAH"],
+["12/26","4:30","Rate Bowl","New Mexico","Minnesota","H","ESPN",5,"","HHHHAAHHAHHHAHAHHAAH"],
+["12/26","8:00","First Responder Bowl","FIU","UTSA","H","ESPN",5,"","HHHHHAAAAAHAAAAAAAAA"],
+["12/27","11:00a","Military Bowl","Pitt","East Carolina","H","ESPN",5,"","AHAAAHAAAAAAHAHAAHHH"],
+["12/27","12:00","Pinstripe Bowl","Penn State","Clemson","A","ABC",5,"","AHAHHAHHAAAHHAHHHHHA"],
+["12/27","2:15","Fenway Bowl","UConn","Army","H","ESPN",5,"","AHAHHAAAAAAAAHAHAAAH"],
+["12/27","3:30","Pop-Tarts Bowl","Georgia Tech","BYU","H","ABC",7,"","HAHAHHHAHHHHHAHHHHHH"],
+["12/27","4:30","Arizona Bowl","Miami OH","Fresno State","H","CW",5,"","HHHHAHAAHAHAHHHHHAHA"],
+["12/27","5:45","New Mexico Bowl","North Texas","San Diego State","A","ESPN",6,"","HAAAAAAAAAAAAAAAAAAA"],
+["12/27","7:30","Gator Bowl","Virginia","Missouri","A","ABC",6,"","HHHHHAAHAAAAAHAAAAAA"],
+["12/27","9:15","Texas Bowl","LSU","Houston","H","ESPN",6,"","HHAAAHHHHHHAHAHHAAHA"],
+["12/29","2:00","Birmingham Bowl","App State","Georgia Southern","H","ESPN",5,"","HHHHHAAHAAHHAHHHHHAA"],
+["12/30","2:00","Independence Bowl","Coastal Carolina","Louisiana Tech","H","ESPN",5,"","HAAHAHHHAHHHHAHAHHHH"],
+["12/30","5:30","Music City Bowl","Tennessee","Illinois","H","ESPN",5,"","AAAAAAAAAAAAAAAAHAHA"],
+["12/30","9:00","Alamo Bowl","USC","TCU","H","ESPN",6,"","AAAAAAAAAAAAAAAAAAAA"],
+["12/31","12:00","ReliaQuest Bowl","Iowa","Vanderbilt","A","ESPN",7,"","HHHHAHHHHHHHHHHHHHHH"],
+["12/31","2:00","Sun Bowl","Arizona State","Duke","H","CBS",5,"","AAHAAAHAHHAAHAAAAHHA"],
+["12/31","3:00","Citrus Bowl","Michigan","Texas","H","ABC",7,"","HHHHHHHHHHHHHHHHHHHH"],
+["12/31","3:30","Las Vegas Bowl","Nebraska","Utah","H","ESPN",6,"","HHHHHHHHHHAHHAHHHHAH"],
+["12/31","7:30","Cotton Bowl (CFP QF)","Miami","Ohio State","A","ESPN",8,"CFP QF","HHHHHHHHHHHHHHHHHHHH"],
+["1/1","12:00","Orange Bowl (CFP QF)","Oregon","Texas Tech","A","ESPN",8,"CFP QF","AHHAAAHHHHAAAAHAAAHA"],
+["1/1","4:00","Rose Bowl (CFP QF)","Alabama","Indiana","H","ESPN",8,"CFP QF",["H","H","H","H","Oklahoma","H","A","H","H","H","H","A","H","H","H","H","H","H","H","A"]],
+["1/1","8:00","Sugar Bowl (CFP QF)","Ole Miss","Georgia","A","ESPN",8,"CFP QF","HHHHHHHHHHHAAHHHHHHH"],
+["1/2","1:00","Armed Forces Bowl","Rice","Texas State","H","ESPN",5,"","HAAHHAHHHHHHAHHHHHHH"],
+["1/2","4:30","Liberty Bowl","Navy","Cincinnati","A","ESPN",5,"","AAAHAAAAAAAAAAAAHAAA"],
+["1/2","8:00","Holiday Bowl","Arizona","SMU","H","FOX",6,"","AAAAAAAAAAAAAAAAAHAA"],
+["1/2","8:00","Duke's Mayo Bowl","Wake Forest","Mississippi State","A","ESPN",5,"","AAHAAAAAAAAAHAAAAAAA"],
+["1/8","7:30","Fiesta Bowl (CFP Semi)","Ole Miss","Miami","H","ESPN",9,"CFP SF",Array(20).fill("Ohio State").map((v,i)=>i===16?"Georgia":v)],
+["1/9","7:30","Peach Bowl (CFP Semi)","Indiana","Oregon","A","ESPN",9,"CFP SF",["H","A","A","A","H","A","Texas Tech","A","A","Texas Tech","A","H","A","A","A","A","A","H","A","Alabama"]],
+["1/19","7:30","National Championship","Indiana","Miami","A","ESPN",10,"CFP NC",Array(20).fill("Ohio State").map((v,i)=>(i===14||i===16)?"A":v)],
+];
+
+const HISTORY = {
+  "2025":["NANA","BRAYLON","DERRICK","MATT","NAT","KASH","ALLY","LANCE","JIMMY","ANDI","PARKER","LANDON","JERRICKA","BRYANA","MICHELLE","JAIME","REAGAN","DALE","EMERY"],
+  "2024":["KASH","ALLY","ANDI","LANCE","DERRICK","MATT","JERRICKA","PARKER","JIMMY","LANDON","REAGAN","JAIME","MICHELLE","NAT","BRYANA","NANA","PAPAW"],
+  "2023":["MATT","LANCE","BRIAN","PAPAW","REAGAN","NANA","MICHELLE","DERRICK","JAIME","JIMMY","ALLY","JERRICKA","KASH","ANDI","PARKER","BRYANA","LANDON"],
+  "2022":["ANDI","REAGAN","LANCE","KASH","MATT","ALLY","JERRICKA","JAIME","NANA","PARKER","PAPAW","DERRICK","LANDON","JIMMY","MICHELLE"]
+};
+
+// ---------- RESULTS (what the admin updates) ----------
+// The admin's "Download updated site" button rewrites the line below with the latest results.
+/*RESULTS_START*/const SAVED_RESULTS = null;/*RESULTS_END*/
+// Admin key check. The key itself is not stored in this file, only a scrambled version of it.
+const ADMIN_KEY_HASH = 3115154805; // key: see chat (change with setAdminKey("new key") in the browser console)
+
+// ---------- MODEL ----------
+const games = G.map((g,i)=>{
+  const [date,time,bowl,a,h,w,tv,pts,round,raw] = g;
+  const arr = typeof raw==="string" ? raw.split("") : raw;
+  const name = v => v==="A"?a : v==="H"?h : v;
+  return {i,date,time,bowl,a,h,lastSeason:w,winner:null,tv,pts,round,playoff:!!round,picks:arr.map(name)};
+});
+const cap = s => s.charAt(0)+s.slice(1).toLowerCase();
+
+const lastSeasonResults = () => ({w:games.map(g=>g.lastSeason), ot:ACTUAL_OT});
+function loadResults(){
+  try{ const s=localStorage.getItem("pickem-results"); if(s) return JSON.parse(s); }catch(e){}
+  return SAVED_RESULTS || lastSeasonResults();
+}
+let results = loadResults();
+function applyResults(){ games.forEach((g,i)=>{ const w=results.w[i]; g.winner = w==="A"?g.a : w==="H"?g.h : null; }); }
+function saveResults(){ try{ localStorage.setItem("pickem-results",JSON.stringify(results)); }catch(e){} applyResults(); }
+applyResults();
+
+let asOf = games.length; // test mode: only count games up to this number
+const isDone = g => !!g.winner && g.i < asOf;
+const doneCount = () => games.filter(isDone).length;
+
+function standings(){
+  const rows = PEOPLE.map((p,pi)=>{
+    let pts=0,correct=0,po=0,remain=0;
+    games.forEach(g=>{
+      const pick=g.picks[pi];
+      if(isDone(g)){ if(pick===g.winner){pts+=g.pts;correct++;if(g.playoff)po++;} }
+      else if(pick===g.a||pick===g.h){ remain+=g.pts; }
+    });
+    const otKnown = results.ot!==null && results.ot!=="" && results.ot!==undefined;
+    return {name:p,pi,pts,correct,po,remain,ot:OT_GUESS[pi],otDiff:otKnown?Math.abs(OT_GUESS[pi]-results.ot):0};
+  });
+  const final = games.every(isDone);
+  rows.sort((x,y)=> y.pts-x.pts || y.correct-x.correct || y.po-x.po || (final? x.otDiff-y.otDiff : 0) || x.name.localeCompare(y.name));
+  rows.forEach((r,i)=>{
+    const prev=rows[i-1];
+    const tied = prev && prev.pts===r.pts && prev.correct===r.correct && prev.po===r.po && (!final||prev.otDiff===r.otDiff);
+    r.rank = tied ? prev.rank : i+1;
+  });
+  return rows;
+}
+const lastResult = () => { const d=games.filter(isDone); if(!d.length) return "No games played yet"; const g=d[d.length-1]; const loser=g.winner===g.a?g.h:g.a; return `Last Updated: ${g.winner} over ${loser}`; };
+
+// ---------- VIEWS ----------
+const app=document.getElementById("app");
+function nav(active){
+  const links=[["#/","Leaderboard"],["#/picks","All Picks"],["#/schedule","Schedule"],["#/members","Family"],["#/history","History"]];
+  document.getElementById("nav").innerHTML=links.map(([h,t])=>`<a href="${h}" class="${active===h?"on":""}">${t}</a>`).join("");
+}
+const rankCls = r => r===1?"r1":r===2?"r2":r===3?"r3":"";
+const personLink = n => `<a class="person" href="#/member/${n}">${cap(n)}</a>`;
+
+function viewLeaderboard(){
+  const rows=standings();
+  return `<div class="banner">${lastResult()}</div>
+  <div class="card"><h2>Leaderboard</h2>
+  <table><thead><tr><th class="num">#</th><th>Name</th><th class="num">Points</th><th class="num">Pts Left</th><th class="num">Correct</th></tr></thead><tbody>
+  ${rows.map(r=>`<tr><td class="rank ${rankCls(r.rank)}">${r.rank}</td><td>${personLink(r.name)}</td><td class="num"><b>${r.pts}</b></td><td class="num">${r.remain}</td><td class="num">${r.correct} / ${doneCount()}</td></tr>`).join("")}
+  </tbody></table>
+  <p class="muted" style="font-size:15px">Ties broken by: correct games → correct playoff games → OT games guess → championship score guess.</p></div>`;
+}
+
+function viewMembers(){
+  return `<div class="card"><h2>Tap your name</h2><div class="chips">${[...PEOPLE].sort().map(p=>`<a href="#/member/${p}">${cap(p)}</a>`).join("")}</div></div>`;
+}
+
+function viewMember(name){
+  const rows=standings(); const me=rows.find(r=>r.name===name);
+  if(!me) return viewMembers();
+  const pi=me.pi; const leader=rows[0];
+  const playoffDone=games.filter(g=>isDone(g)&&g.playoff).length;
+  const upcoming=games.filter(g=>!isDone(g));
+  const rootFor = leader.name===name ? [] : upcoming.filter(g=>g.picks[pi]!==g.picks[leader.pi] && (g.picks[pi]===g.a||g.picks[pi]===g.h));
+  const behind = leader.pts-me.pts;
+  const canCatch = me.remain >= behind;
+  const status = leader.name===name ? "🏆 You're in first place!" :
+    upcoming.length===0 ? "Season complete." :
+    canCatch ? `You're ${behind} points behind ${cap(leader.name)} with ${me.remain} points still possible.` :
+    `You're ${behind} points behind ${cap(leader.name)} — only ${me.remain} points left, so first place is out of reach.`;
+
+  return `<div class="chips" style="margin-bottom:16px">${[...PEOPLE].sort().map(p=>`<a class="${p===name?"on":""}" href="#/member/${p}">${cap(p)}</a>`).join("")}</div>
+  <div class="card"><h2>${cap(name)}</h2>
+   <div class="big">
+    <div class="stat"><div class="v ${rankCls(me.rank)}">#${me.rank}</div><div class="l">Current rank</div></div>
+    <div class="stat"><div class="v">${me.pts}</div><div class="l">Total points</div></div>
+    <div class="stat"><div class="v">${me.correct}<span class="muted" style="font-size:22px"> / ${doneCount()}</span></div><div class="l">Correct picks</div></div>
+    <div class="stat"><div class="v">${me.po}<span class="muted" style="font-size:22px"> / ${playoffDone}</span></div><div class="l">Playoff picks correct</div></div>
+    <div class="stat"><div class="v">${me.remain}</div><div class="l">Points still possible</div></div>
+   </div>
+   <p style="margin:14px 0 0"><b>Tiebreakers:</b> ${me.ot} overtime games · Championship score: <span class="muted">not recorded</span></p>
+  </div>
+  <div class="card root"><h2>What I need to win</h2><p>${status}</p>
+   ${rootFor.length?`<table><thead><tr><th>Game</th><th>Root for</th><th class="hide-sm">${cap(leader.name)} picked</th><th class="num">Pts</th></tr></thead><tbody>
+    ${rootFor.map(g=>`<tr><td>${g.date} · ${g.bowl}</td><td class="w">${g.picks[pi]}</td><td class="hide-sm">${g.picks[leader.pi]}</td><td class="num">${g.pts}</td></tr>`).join("")}</tbody></table>`
+    : (upcoming.length&&leader.name!==name?`<p class="muted">You and ${cap(leader.name)} picked the same team in every game left.</p>`:"")}
+  </div>
+  <div class="card"><h2>My picks</h2>
+   <table><thead><tr><th>Date</th><th>Game</th><th>My pick</th><th class="num">Pts</th></tr></thead><tbody>
+   ${games.map(g=>{const pick=g.picks[pi];const done=isDone(g);const ok=done&&pick===g.winner;
+     const cls=!done?"p":ok?"w":"x";
+     return `<tr><td>${g.date}</td><td>${g.round?`<span class="tag cfp">${g.round}</span> `:""}${g.a} vs ${g.h}<div class="muted" style="font-size:14px">${g.bowl}</div></td><td class="${cls}">${pick}</td><td class="num ${cls}">${!done?"—":ok?"+"+g.pts:"0"}</td></tr>`;}).join("")}
+   </tbody></table></div>`;
+}
+
+function viewPicks(){
+  return `<div class="card"><h2>Everyone's picks</h2><p class="muted" style="margin-top:0">Green = right, red = wrong, yellow = not played yet. Scroll sideways to see everyone.</p>
+  <div class="scroll"><table class="grid"><thead><tr><th>Game</th>${PEOPLE.map(p=>`<th><a href="#/member/${p}" style="color:#fff">${cap(p)}</a></th>`).join("")}</tr></thead><tbody>
+  ${games.map(g=>`<tr><th>${g.date} ${g.a} vs ${g.h} <span class="muted">(${g.pts})</span></th>${g.picks.map(pk=>{const c=!isDone(g)?"p":pk===g.winner?"w":"x";return `<td class="${c}">${pk}</td>`;}).join("")}</tr>`).join("")}
+  </tbody></table></div></div>`;
+}
+
+function viewSchedule(){
+  return `<div class="card"><h2>Schedule & results</h2><table><thead><tr><th>Date</th><th>Bowl</th><th>Matchup</th><th class="hide-sm">TV</th><th class="num">Pts</th><th>Winner</th></tr></thead><tbody>
+  ${games.map(g=>`<tr><td>${g.date}<div class="muted" style="font-size:14px">${g.time}</div></td><td>${g.round?`<span class="tag cfp">${g.round}</span><br>`:""}${g.bowl}</td><td>${g.a} vs ${g.h}</td><td class="hide-sm">${g.tv}</td><td class="num">${g.pts}</td><td class="${isDone(g)?"w":"p"}">${isDone(g)?g.winner:"Upcoming"}</td></tr>`).join("")}
+  </tbody></table></div>`;
+}
+
+function viewHistory(){
+  const yrs=Object.keys(HISTORY);
+  const n=Math.max(...yrs.map(y=>HISTORY[y].length));
+  return `<div class="card"><h2>Past champions & standings</h2>
+  <table><thead><tr><th class="num">#</th>${yrs.map(y=>`<th>${y}</th>`).join("")}</tr></thead><tbody>
+  ${Array.from({length:n},(_,i)=>`<tr><td class="rank ${rankCls(i+1)}">${i+1}</td>${yrs.map(y=>`<td>${HISTORY[y][i]?(i===0?"🏆 ":"")+cap(HISTORY[y][i]):""}</td>`).join("")}</tr>`).join("")}
+  </tbody></table></div>`;
+}
+
+// ---------- ADMIN ----------
+function hashKey(s){let h=5381;for(const c of s)h=(Math.imul(h,33)^c.charCodeAt(0))>>>0;return h;}
+window.setAdminKey = k => console.log("Replace ADMIN_KEY_HASH in the file with:", hashKey(k));
+let unlocked=false; try{unlocked=sessionStorage.getItem("pickem-admin")==="1";}catch(e){}
+window.unlock=()=>{const k=document.getElementById("key").value;
+  if(hashKey(k)===ADMIN_KEY_HASH){unlocked=true;try{sessionStorage.setItem("pickem-admin","1");}catch(e){}render();}
+  else document.getElementById("keymsg").textContent="That key isn't right.";};
+window.lockAdmin=()=>{unlocked=false;try{sessionStorage.removeItem("pickem-admin");}catch(e){}location.hash="#/";};
+window.setWinner=(i,v)=>{results.w[i]=v;saveResults();render(true);};
+window.setOT=v=>{results.ot=v===""?null:+v;saveResults();};
+window.clearAll=()=>{if(confirm("Erase every result? Use this at the start of a new season.")){results={w:games.map(()=>""),ot:null};saveResults();render(true);}};
+window.loadLastSeason=()=>{results=lastSeasonResults();saveResults();render(true);};
+window.downloadSite=()=>{
+  const clone=document.documentElement.cloneNode(true);
+  ["#app","#nav","#asof"].forEach(s=>clone.querySelector(s).innerHTML="");
+  let html="<!DOCTYPE html>\n"+clone.outerHTML;
+  html=html.replace(/\/\*RESULTS_START\*\/[\s\S]*?\/\*RESULTS_END\*\//,()=>"/*RESULTS_START*/const SAVED_RESULTS = "+JSON.stringify(results)+";/*RESULTS_END*/");
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([html],{type:"text/html"}));a.download="bowl-pickem.html";a.click();
+};
+
+function viewAdmin(){
+  if(!unlocked) return `<div class="card" style="max-width:460px"><h2>🔒 Admin</h2><p>Enter the admin key to update game results.</p>
+    <input id="key" type="password" class="inp" placeholder="Admin key" onkeydown="if(event.key==='Enter')unlock()">
+    <button class="btn" onclick="unlock()">Unlock</button><p id="keymsg" style="color:var(--loss);font-weight:700"></p></div>`;
+  const done=games.filter(g=>g.winner).length;
+  return `<div class="card"><h2>Admin: enter results</h2>
+    <p style="margin-top:0">${done} of ${games.length} games have a winner. Tap the team that won. Changes show up right away on this computer.</p>
+    <p><b>When you're done:</b> tap <b>Download updated site</b> and send the new file to the family so they see the results.</p>
+    <div class="chips"><button class="btn" onclick="downloadSite()">⬇ Download updated site</button>
+    <button class="btn ghost" onclick="clearAll()">Clear all results</button>
+    <button class="btn ghost" onclick="loadLastSeason()">Load last season's results</button>
+    <button class="btn ghost" onclick="lockAdmin()">Lock admin</button></div>
+    <p style="margin-bottom:0"><b>Bowl games that went to overtime:</b>
+    <input class="inp" style="width:90px" type="number" min="0" value="${results.ot??""}" onchange="setOT(this.value)"></p></div>
+  <div class="card"><table><tbody>
+  ${games.map(g=>{const w=results.w[g.i];return `<tr><td>${g.date}<div class="muted" style="font-size:14px">${g.round?`<span class="tag cfp">${g.round}</span> `:""}${g.bowl} · ${g.pts} pts</div></td>
+   <td><div class="chips">
+    <button class="btn pick ${w==="A"?"sel":""}" onclick="setWinner(${g.i},'A')">${g.a}</button>
+    <button class="btn pick ${w==="H"?"sel":""}" onclick="setWinner(${g.i},'H')">${g.h}</button>
+    <button class="btn ghost ${!w?"selp":""}" onclick="setWinner(${g.i},'')">Not played</button></div></td></tr>`;}).join("")}
+  </tbody></table></div>`;
+}
+
+// ---------- ROUTER ----------
+function render(keepScroll){
+  const h=location.hash||"#/";
+  const y=window.scrollY;
+  if(h==="#/admin"){nav("");app.innerHTML=viewAdmin();window.scrollTo(0,keepScroll?y:0);return;}
+  if(h.startsWith("#/member/")){nav("#/members");app.innerHTML=viewMember(decodeURIComponent(h.slice(9)));}
+  else if(h==="#/picks"){nav(h);app.innerHTML=viewPicks();}
+  else if(h==="#/schedule"){nav(h);app.innerHTML=viewSchedule();}
+  else if(h==="#/members"){nav(h);app.innerHTML=viewMembers();}
+  else if(h==="#/history"){nav(h);app.innerHTML=viewHistory();}
+  else {nav("#/");app.innerHTML=viewLeaderboard();}
+  window.scrollTo(0,0);
+}
+const sel=document.getElementById("asof");
+sel.innerHTML=games.map((g,i)=>`<option value="${i+1}">game ${i+1}: ${g.date} ${g.bowl}</option>`).join("")+`<option value="0">no games (before the season)</option>`;
+sel.value=String(games.length);
+sel.onchange=()=>{asOf=+sel.value;render();};
+window.addEventListener("hashchange",render);
+render();
+</script>
+</body>
+</html>
