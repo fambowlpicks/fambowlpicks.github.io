@@ -256,8 +256,10 @@ const isMe = n => ME && ME!==GUEST && same(ME,n);
 const namesMeFirst = () => [...NAMES].sort((a,b)=>(isMe(b)-isMe(a))||a.localeCompare(b));
 const star = n => (isMe(n)?"⭐ ":"")+esc(cap(n));
 const nameKey = n => encodeURIComponent(n);
-window.chooseMe = i => { ME = i<0 ? GUEST : NAMES[i]; store.set("pickem-me",ME); location.hash = "#/"; render(); };
-window.switchMe = () => { ME=null; store.del("pickem-me"); location.hash="#/welcome"; render(); };
+// someone still needs to make picks: picks are open, games are posted, and they haven't submitted
+const needsPicks = n => !!n && n!==GUEST && !META.locked && games.length>0 && !META.submitted.some(s=>same(s,n));
+window.chooseMe = i => { ME = i<0 ? GUEST : NAMES[i]; store.set("pickem-me",ME); draft=null; submitMsg=""; location.hash = needsPicks(ME) ? "#/submit" : "#/"; render(); };
+window.switchMe = () => { ME=null; store.del("pickem-me"); draft=null; submitMsg=""; location.hash="#/welcome"; render(); };
 
 // my own submitted picks, remembered on this device (so I can edit before the deadline)
 const draftKey = n => "pickem-draft-" + (META.season||"season") + "-" + String(n).toLowerCase();
@@ -461,7 +463,8 @@ function viewSubmit(){
   const sel = NAMES.findIndex(n=>same(n,draft.name));
   const missing = games.filter(g=>!draft.picks[g.id]).length;
   const msgColor = submitMsg.startsWith("✅") ? "var(--win)" : submitMsg.startsWith("⚠") ? "var(--loss)" : "var(--muted)";
-  return `${modeNote()}<div class="card you"><h2>Make my picks</h2>
+  const hi = draft.name ? `${esc(cap(draft.name))}, make your picks` : "Make my picks";
+  return `${modeNote()}<div class="card you"><h2>${hi}</h2>
     <p style="margin-top:0">Tap the team you think will win each game. Picks lock ${esc(lockText())}.</p>
     <label><b>I am:</b> <select class="inp" onchange="draftName(this.value)"><option value="">Choose your name…</option>${NAMES.map((n,i)=>`<option value="${i}" ${i===sel?"selected":""}>${esc(cap(n))}</option>`).join("")}</select></label>
     <p style="margin:6px 0 0" class="muted">${games.length-missing} of ${games.length} games picked</p></div>
@@ -475,7 +478,8 @@ function viewSubmit(){
    <p><b>How many bowl games will go to overtime?</b><br><input class="inp" type="number" min="0" inputmode="numeric" value="${esc(draft.ot)}" oninput="draftNum('ot',this.value)"></p>
    <p><b>National Championship: total points scored by both teams?</b><br><input class="inp" type="number" min="0" inputmode="numeric" value="${esc(draft.score)}" oninput="draftNum('score',this.value)"></p>
    <button class="btn" style="font-size:20px;padding:14px 22px" onclick="submitPicks()" ${submitting?"disabled":""}>${submitting?"Sending…":"Submit my picks"}</button>
-   <p id="submitmsg" style="font-weight:700;color:${msgColor};min-height:1.4em">${esc(submitMsg)}</p></div>`;
+   <p id="submitmsg" style="font-weight:700;color:${msgColor};min-height:1.4em">${esc(submitMsg)}</p>
+   ${submitMsg.startsWith("✅")?bigBtn("#/","Done, go to the home page →"):""}</div>`;
 }
 
 // --- admin ---
@@ -552,7 +556,12 @@ window.addEventListener("hashchange",()=>{ if(location.hash!=="#/submit") submit
 document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible" && API_URL && !location.hash.startsWith("#/submit")) fetchData().then(()=>render(true)); });
 if(!API_URL) loadDemo();
 render();
-fetchData().then(()=>render(true));
+fetchData().then(()=>{
+  // returning visitor who still owes picks: take them straight to the picks screen
+  const h = location.hash || "#/";
+  if((h==="#/" || h==="#") && needsPicks(ME)){ location.hash = "#/submit"; }
+  render(true);
+});
 </script>
 </body>
 </html>
