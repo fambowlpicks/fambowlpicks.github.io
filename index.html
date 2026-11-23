@@ -54,23 +54,36 @@
   .btn.pick.sel{background:var(--winbg);color:var(--win);border-color:var(--win)}
   .btn.ghost.selp{background:var(--pendbg);color:var(--pend);border-color:var(--pend)}
   .inp{font:inherit;padding:10px 12px;border-radius:10px;border:2px solid var(--line);margin:0 8px 8px 0}
+  .hello{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:-4px 0 10px;font-size:16px}
+  .hello a{color:#fff}
+  tr.mine td{background:#fff3cd}
+  tr.mine td:first-child{box-shadow:inset 5px 0 0 var(--gold)}
+  .grid .mycol{background-image:linear-gradient(rgba(224,169,32,.22),rgba(224,169,32,.22))}
+  .grid thead th.mycol{background:var(--gold);color:#16181d}
+  .grid thead th.mycol a{color:#16181d!important}
+  .welcome{max-width:640px;margin:20px auto;text-align:center}
+  .welcome h2{font-size:30px}
+  .welcome .chips{justify-content:center}
+  .welcome .chips a{font-size:20px;padding:14px 20px;min-width:120px;text-align:center}
+  .you{border:3px solid var(--gold);background:#fffaf0}
+  .chip{display:inline-block;padding:8px 12px;border-radius:10px;font-weight:700;font-size:16px}
+  tr.needpick td{background:#fffbea}
+  .btn[disabled]{opacity:.6;cursor:wait}
+  select.inp{background:#fff;font-size:18px}
   @media(max-width:600px){body{font-size:17px}.hide-sm{display:none}}
 </style>
 </head>
 <body>
 <header>
   <h1>🏈 Family Bowl Pick'em</h1>
+  <div class="hello" id="hello"></div>
   <nav id="nav"></nav>
 </header>
-<div class="sim">
-  <b>Test mode:</b> using last season's games. Show standings after
-  <select id="asof"></select>
-</div>
 <main id="app"></main>
 <footer style="text-align:center;padding:20px;font-size:14px"><a href="#/admin" style="color:var(--muted)">Admin</a></footer>
 
 <script>
-// ---------- DATA (last season, from the family spreadsheet) ----------
+// ---------- DEMO DATA (last season) — used only until the Google Sheet is connected ----------
 const PEOPLE = ["DERRICK","LANCE","PARKER","JIMMY","MATT","LANDON","NANA","MICHELLE","ANDI","ALLY","NAT","REAGAN","JERRICKA","BRAYLON","KASH","JAIME","DALE","ASHTON","BRYANA","EMERY"];
 const OT_GUESS = [3,5,4,1,0,3,4,3,2,6,3,6,4,7,13,2,3,6,6,6];
 const ACTUAL_OT = 3;
@@ -135,96 +148,234 @@ const HISTORY = {
   "2022":["ANDI","REAGAN","LANCE","KASH","MATT","ALLY","JERRICKA","JAIME","NANA","PARKER","PAPAW","DERRICK","LANDON","JIMMY","MICHELLE"]
 };
 
-// ---------- RESULTS (what the admin updates) ----------
-// The admin's "Download updated site" button rewrites the line below with the latest results.
-/*RESULTS_START*/const SAVED_RESULTS = null;/*RESULTS_END*/
-// Admin key check. The key itself is not stored in this file, only a scrambled version of it.
-const ADMIN_KEY_HASH = 3115154805; // key: see chat (change with setAdminKey("new key") in the browser console)
+// =====================================================================
+//  CONNECT TO YOUR GOOGLE SHEET
+//  Paste your Apps Script "Web app URL" between the quotes below.
+//  Leave it empty ("") to run in demo mode with last season's data.
+// =====================================================================
+const API_URL = "https://script.google.com/macros/s/AKfycby7O5HPMavbwEjHhXK47SsiObTxruSVCjmJu0qIknTd4BsW2pWmhEeigI1MxFg-qFy3OA/exec";
 
-// ---------- MODEL ----------
-const games = G.map((g,i)=>{
-  const [date,time,bowl,a,h,w,tv,pts,round,raw] = g;
-  const arr = typeof raw==="string" ? raw.split("") : raw;
-  const name = v => v==="A"?a : v==="H"?h : v;
-  return {i,date,time,bowl,a,h,lastSeason:w,winner:null,tv,pts,round,playoff:!!round,picks:arr.map(name)};
-});
-const cap = s => s.charAt(0)+s.slice(1).toLowerCase();
+// ---------- helpers ----------
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const cap = s => { s=String(s||""); return s===s.toUpperCase() ? s.charAt(0)+s.slice(1).toLowerCase() : s; };
+const same = (x,y) => String(x||"").trim().toLowerCase() === String(y||"").trim().toLowerCase() && String(x||"").trim()!=="";
+const store = { get:k=>{try{return localStorage.getItem(k);}catch(e){return null;}}, set:(k,v)=>{try{localStorage.setItem(k,v);}catch(e){}}, del:k=>{try{localStorage.removeItem(k);}catch(e){}} };
+const sess  = { get:k=>{try{return sessionStorage.getItem(k);}catch(e){return null;}}, set:(k,v)=>{try{sessionStorage.setItem(k,v);}catch(e){}}, del:k=>{try{sessionStorage.removeItem(k);}catch(e){}} };
 
-const lastSeasonResults = () => ({w:games.map(g=>g.lastSeason), ot:ACTUAL_OT});
-function loadResults(){
-  try{ const s=localStorage.getItem("pickem-results"); if(s) return JSON.parse(s); }catch(e){}
-  return SAVED_RESULTS || lastSeasonResults();
+// ---------- state ----------
+let MODE = API_URL ? "loading" : "demo";   // demo | loading | live | error
+let LOAD_ERROR = "";
+let games = [];          // {id,i,date,time,bowl,a,h,tv,pts,round,playoff,winner}
+let NAMES = [];          // everyone playing
+let PICKS = {};          // name -> {picks:[team per game], ot, score}   (only once picks lock)
+let META = { season:"", locked:true, lockAt:null, submitted:[], ot:null, score:null };
+let asOf = Infinity;     // admin-only test mode
+
+function loadDemo(){
+  games = G.map((g,i)=>{ const [date,time,bowl,a,h,w,tv,pts,round]=g; return {id:"g"+(i+1),i,date,time,bowl,a,h,tv,pts,round,playoff:!!round,winner:w==="A"?a:h}; });
+  NAMES = [...PEOPLE];
+  PICKS = {};
+  PEOPLE.forEach((p,pi)=>{ PICKS[p] = { picks: G.map(g=>{ const raw=g[9]; const v=raw[pi]; return v==="A"?g[3] : v==="H"?g[4] : v; }), ot: OT_GUESS[pi], score: null }; });
+  META = { season:"2025–26 (demo data)", locked:true, lockAt:null, submitted:[...PEOPLE], ot:ACTUAL_OT, score:null };
 }
-let results = loadResults();
-function applyResults(){ games.forEach((g,i)=>{ const w=results.w[i]; g.winner = w==="A"?g.a : w==="H"?g.h : null; }); }
-function saveResults(){ try{ localStorage.setItem("pickem-results",JSON.stringify(results)); }catch(e){} applyResults(); }
-applyResults();
 
-let asOf = games.length; // test mode: only count games up to this number
+function loadFromApi(d){
+  games = (d.games||[]).map((g,i)=>{
+    const a=String(g.a||""), h=String(g.h||"");
+    const winner = same(g.winner,a) ? a : same(g.winner,h) ? h : null;
+    return {id:String(g.id), i, date:String(g.date||""), time:String(g.time||""), bowl:String(g.bowl||""), a, h, tv:String(g.tv||""), pts:Number(g.pts)||0, round:String(g.round||""), playoff:!!g.round, winner};
+  });
+  NAMES = (d.people||[]).map(String);
+  PICKS = {};
+  (d.picks||[]).forEach(p=>{
+    const name = NAMES.find(n=>same(n,p.name)) || String(p.name);
+    PICKS[name] = { picks: games.map(g=>String((p.picks||{})[g.id]||"")), ot: p.ot, score: p.score };
+  });
+  META = { season:String(d.season||""), locked:!!d.locked, lockAt:d.lockAt||null, submitted:(d.submitted||[]).map(String), ot:d.ot??null, score:d.score??null };
+}
+
+async function fetchData(){
+  if(!API_URL){ loadDemo(); MODE="demo"; return; }
+  try{
+    const r = await fetch(API_URL + (API_URL.includes("?")?"&":"?") + "t=" + Date.now());
+    const d = await r.json();
+    if(!d.ok) throw new Error(d.error||"bad response");
+    loadFromApi(d); MODE="live"; LOAD_ERROR="";
+  }catch(e){
+    if(MODE!=="live"){ MODE="error"; }
+    LOAD_ERROR = String(e.message||e);
+  }
+}
+
+async function post(body){
+  if(!API_URL) return {ok:false, error:"The site isn't connected to the Google Sheet yet."};
+  try{
+    const r = await fetch(API_URL, {method:"POST", body:JSON.stringify(body)});
+    return await r.json();
+  }catch(e){ return {ok:false, error:"Couldn't reach the Google Sheet. Check your internet and try again."}; }
+}
+
+// ---------- scoring ----------
 const isDone = g => !!g.winner && g.i < asOf;
 const doneCount = () => games.filter(isDone).length;
+const players = () => NAMES.filter(n=>PICKS[n]);
+const pickOf = (name,g) => PICKS[name] ? PICKS[name].picks[g.i] : "";
+const allDone = () => games.length>0 && games.every(isDone);
 
 function standings(){
-  const rows = PEOPLE.map((p,pi)=>{
+  const final = allDone();
+  const rows = players().map(name=>{
     let pts=0,correct=0,po=0,remain=0;
     games.forEach(g=>{
-      const pick=g.picks[pi];
-      if(isDone(g)){ if(pick===g.winner){pts+=g.pts;correct++;if(g.playoff)po++;} }
-      else if(pick===g.a||pick===g.h){ remain+=g.pts; }
+      const pick = pickOf(name,g);
+      if(isDone(g)){ if(same(pick,g.winner)){pts+=g.pts;correct++;if(g.playoff)po++;} }
+      else if(same(pick,g.a)||same(pick,g.h)){ remain+=g.pts; }
     });
-    const otKnown = results.ot!==null && results.ot!=="" && results.ot!==undefined;
-    return {name:p,pi,pts,correct,po,remain,ot:OT_GUESS[pi],otDiff:otKnown?Math.abs(OT_GUESS[pi]-results.ot):0};
+    const p = PICKS[name];
+    const otDiff = (META.ot!==null && p.ot!==null && p.ot!==undefined) ? Math.abs(p.ot-META.ot) : 0;
+    const scDiff = (META.score!==null && p.score!==null && p.score!==undefined) ? Math.abs(p.score-META.score) : 0;
+    return {name,pts,correct,po,remain,ot:p.ot,score:p.score,otDiff,scDiff};
   });
-  const final = games.every(isDone);
-  rows.sort((x,y)=> y.pts-x.pts || y.correct-x.correct || y.po-x.po || (final? x.otDiff-y.otDiff : 0) || x.name.localeCompare(y.name));
+  rows.sort((x,y)=> y.pts-x.pts || y.correct-x.correct || y.po-x.po || (final?(x.otDiff-y.otDiff)||(x.scDiff-y.scDiff):0) || x.name.localeCompare(y.name));
   rows.forEach((r,i)=>{
-    const prev=rows[i-1];
-    const tied = prev && prev.pts===r.pts && prev.correct===r.correct && prev.po===r.po && (!final||prev.otDiff===r.otDiff);
-    r.rank = tied ? prev.rank : i+1;
+    const p=rows[i-1];
+    const tied = p && p.pts===r.pts && p.correct===r.correct && p.po===r.po && (!final || (p.otDiff===r.otDiff && p.scDiff===r.scDiff));
+    r.rank = tied ? p.rank : i+1;
   });
   return rows;
 }
-const lastResult = () => { const d=games.filter(isDone); if(!d.length) return "No games played yet"; const g=d[d.length-1]; const loser=g.winner===g.a?g.h:g.a; return `Last Updated: ${g.winner} over ${loser}`; };
 
-// ---------- VIEWS ----------
+const lastResult = () => { const d=games.filter(isDone); if(!d.length) return "No games played yet"; const g=d[d.length-1]; return `Last Updated: ${esc(g.winner)} over ${esc(g.winner===g.a?g.h:g.a)}`; };
+const lockText = () => META.lockAt ? new Date(META.lockAt).toLocaleString([], {weekday:"short", month:"short", day:"numeric", hour:"numeric", minute:"2-digit"}) : "the first kickoff";
+
+// ---------- who am I (saved on this device) ----------
+let ME = store.get("pickem-me");
+const GUEST="__guest";
+const isMe = n => ME && ME!==GUEST && same(ME,n);
+const namesMeFirst = () => [...NAMES].sort((a,b)=>(isMe(b)-isMe(a))||a.localeCompare(b));
+const star = n => (isMe(n)?"⭐ ":"")+esc(cap(n));
+const nameKey = n => encodeURIComponent(n);
+window.chooseMe = i => { ME = i<0 ? GUEST : NAMES[i]; store.set("pickem-me",ME); location.hash = "#/"; render(); };
+window.switchMe = () => { ME=null; store.del("pickem-me"); location.hash="#/welcome"; render(); };
+
+// my own submitted picks, remembered on this device (so I can edit before the deadline)
+const draftKey = n => "pickem-draft-" + (META.season||"season") + "-" + String(n).toLowerCase();
+const loadDraft = n => { try{ return JSON.parse(store.get(draftKey(n))||"null"); }catch(e){ return null; } };
+const saveDraft = (n,d) => store.set(draftKey(n), JSON.stringify(d));
+
+// ---------- views ----------
 const app=document.getElementById("app");
 function nav(active){
-  const links=[["#/","Leaderboard"],["#/picks","All Picks"],["#/schedule","Schedule"],["#/members","Family"],["#/history","History"]];
+  const links=[["#/","Leaderboard"],["#/members","Picks"],["#/schedule","Schedule"],["#/history","History"]];
   document.getElementById("nav").innerHTML=links.map(([h,t])=>`<a href="${h}" class="${active===h?"on":""}">${t}</a>`).join("");
 }
 const rankCls = r => r===1?"r1":r===2?"r2":r===3?"r3":"";
-const personLink = n => `<a class="person" href="#/member/${n}">${cap(n)}</a>`;
+const personLink = n => `<a class="person" href="#/member/${nameKey(n)}">${esc(cap(n))}</a>`;
+const bigBtn = (href,text) => `<a class="btn" style="text-decoration:none;display:inline-block" href="${href}">${text}</a>`;
 
+function modeNote(){
+  if(MODE==="demo") return `<div class="card" style="background:#eef4ff;border-color:#c9d8f5"><b>Demo mode:</b> showing last season's picks and results. Connect the Google Sheet to go live.</div>`;
+  if(MODE==="error") return `<div class="card" style="color:var(--loss)"><b>Can't reach the Google Sheet right now.</b> Check your internet and refresh the page.</div>`;
+  if(MODE==="loading") return `<div class="card muted">Loading the latest picks and results…</div>`;
+  return "";
+}
+
+function hello(){
+  const el=document.getElementById("hello");
+  if(!ME){el.innerHTML="";return;}
+  el.innerHTML = ME===GUEST
+    ? `<span>Just looking</span><a href="javascript:void 0" onclick="switchMe()">Pick your name</a>`
+    : `<span>Hi, <a href="#/member/${nameKey(ME)}"><b>${esc(cap(ME))}</b></a>!</span><a href="javascript:void 0" onclick="switchMe()">Not you? Switch</a>`;
+}
+
+function viewWelcome(){
+  return `<div class="welcome card"><h2>👋 Welcome! Who are you?</h2>
+  <p>Tap your name so the site can show <b>your</b> picks, rank and the games you need to win.</p>
+  <div class="chips">${NAMES.map((p,i)=>[p,i]).sort((x,y)=>x[0].localeCompare(y[0])).map(([p,i])=>`<a href="javascript:void 0" onclick="chooseMe(${i})">${esc(cap(p))}</a>`).join("")}</div>
+  <p style="margin-top:20px"><a href="javascript:void 0" onclick="chooseMe(-1)" style="color:var(--muted)">I'm just looking</a></p></div>`;
+}
+
+// --- before the deadline ---
+function submittedList(){
+  const sub = n => META.submitted.some(s=>same(s,n));
+  const count = NAMES.filter(sub).length;
+  return `<div class="card"><h2>Who's turned in picks <span class="muted" style="font-size:18px">(${count} of ${NAMES.length})</span></h2>
+   <div class="chips">${namesMeFirst().map(n=>`<span class="chip ${sub(n)?"w":"p"}">${sub(n)?"✓":"…"} ${star(n)}</span>`).join("")}</div>
+   <p class="muted" style="margin-bottom:0;font-size:15px">Everyone's picks show up here once picks lock on ${esc(lockText())}.</p></div>`;
+}
+function viewPicksOpen(){
+  const mineIn = ME && ME!==GUEST && META.submitted.some(s=>same(s,ME));
+  return `${modeNote()}<div class="banner">🏈 Picks are open! They lock ${esc(lockText())}.</div>
+   <div class="card you"><h2 style="margin-bottom:6px">${mineIn?"✓ Your picks are in":"Make your picks"}</h2>
+   <p style="margin:0 0 12px">${mineIn?"You can still change them until picks lock.":"Pick a winner for every game, plus two tiebreaker guesses."}</p>
+   ${bigBtn("#/submit", mineIn?"Change my picks →":"Make my picks →")}</div>
+   ${submittedList()}`;
+}
+
+// --- leaderboard ---
 function viewLeaderboard(){
+  if(!META.locked) return viewPicksOpen();
   const rows=standings();
-  return `<div class="banner">${lastResult()}</div>
-  <div class="card"><h2>Leaderboard</h2>
-  <table><thead><tr><th class="num">#</th><th>Name</th><th class="num">Points</th><th class="num">Pts Left</th><th class="num">Correct</th></tr></thead><tbody>
-  ${rows.map(r=>`<tr><td class="rank ${rankCls(r.rank)}">${r.rank}</td><td>${personLink(r.name)}</td><td class="num"><b>${r.pts}</b></td><td class="num">${r.remain}</td><td class="num">${r.correct} / ${doneCount()}</td></tr>`).join("")}
-  </tbody></table>
+  const mine=rows.find(r=>isMe(r.name));
+  let you="";
+  if(mine){
+    const leader=rows[0];
+    const line = mine.rank===1 ? "🏆 You're in first place!" : `You're ${leader.pts-mine.pts} points behind ${esc(cap(leader.name))}, with ${mine.remain} points still possible.`;
+    you=`<div class="card you"><h2 style="margin-bottom:6px">Your spot: <span class="${rankCls(mine.rank)}">#${mine.rank}</span> · ${mine.pts} pts</h2>
+     <p style="margin:0 0 12px">${line}</p>${bigBtn("#/member/"+nameKey(mine.name),"See my picks & what I need →")}</div>`;
+  }
+  return `${modeNote()}<div class="banner">${lastResult()}</div>${you}
+  <div class="card"><h2>Leaderboard${META.season?` <span class="muted" style="font-size:16px">${esc(META.season)}</span>`:""}</h2>
+  ${rows.length?`<table><thead><tr><th class="num">#</th><th>Name</th><th class="num">Points</th><th class="num">Pts Left</th><th class="num">Correct</th></tr></thead><tbody>
+  ${rows.map(r=>`<tr class="${isMe(r.name)?"mine":""}"><td class="rank ${rankCls(r.rank)}">${r.rank}</td><td>${personLink(r.name)}</td><td class="num"><b>${r.pts}</b></td><td class="num">${r.remain}</td><td class="num">${r.correct} / ${doneCount()}</td></tr>`).join("")}
+  </tbody></table>`:`<p>No picks yet.</p>`}
   <p class="muted" style="font-size:15px">Ties broken by: correct games → correct playoff games → OT games guess → championship score guess.</p></div>`;
 }
 
+// --- picks tab ---
+const allBtn = `<a href="#/picks" style="background:var(--brand);color:#fff;border-color:var(--brand)">ALL</a>`;
 function viewMembers(){
-  return `<div class="card"><h2>Tap your name</h2><div class="chips">${[...PEOPLE].sort().map(p=>`<a href="#/member/${p}">${cap(p)}</a>`).join("")}</div></div>`;
+  const open = !META.locked;
+  return `${modeNote()}${open?`<div class="card you"><h2 style="margin-bottom:6px">Picks are open</h2><p style="margin:0 0 12px">They lock ${esc(lockText())}.</p>${bigBtn("#/submit","Make my picks →")}</div>`:""}
+  <div class="card"><h2>Picks</h2><p style="margin-top:0">Tap a name to see that person's picks, or <b>ALL</b> to see everyone's.</p>
+  <div class="chips">${namesMeFirst().map(p=>`<a href="#/member/${nameKey(p)}">${star(p)}</a>`).join("")}${allBtn}</div></div>`;
 }
 
-function viewMember(name){
-  const rows=standings(); const me=rows.find(r=>r.name===name);
-  if(!me) return viewMembers();
-  const pi=me.pi; const leader=rows[0];
+function viewMember(rawName){
+  const name = NAMES.find(n=>same(n,rawName)) || Object.keys(PICKS).find(n=>same(n,rawName));
+  if(!name) return viewMembers();
+  const you = isMe(name) || !ME || ME===GUEST;
+  const chips = `<div class="chips" style="margin-bottom:16px">${namesMeFirst().map(p=>`<a class="${p===name?"on":""}" href="#/member/${nameKey(p)}">${star(p)}</a>`).join("")}${allBtn}</div>`;
+
+  if(!META.locked){
+    const d = isMe(name) ? loadDraft(name) : null;
+    const isIn = META.submitted.some(s=>same(s,name));
+    let body;
+    if(d && d.picks){
+      body = `<p>${isIn?"✓ Your picks are in.":"You haven't submitted yet."} Only you can see these until picks lock on ${esc(lockText())}.</p>
+       <p>${bigBtn("#/submit","Change my picks →")}</p>
+       <table><tbody>${games.map(g=>`<tr><td>${esc(g.date)} · ${esc(g.bowl)}</td><td class="p">${esc(d.picks[g.id]||"—")}</td></tr>`).join("")}</tbody></table>
+       <p><b>Tiebreakers:</b> ${esc(d.ot??"—")} overtime games · championship score ${esc(d.score??"—")}</p>`;
+    } else {
+      body = `<p>${isIn?"✓ Picks are in.":"No picks yet."} Everyone's picks are hidden until picks lock on ${esc(lockText())}.</p>${isMe(name)?bigBtn("#/submit","Make my picks →"):""}`;
+    }
+    return `${chips}<div class="card"><h2>${esc(cap(name))}</h2>${body}</div>`;
+  }
+
+  if(!PICKS[name]) return `${chips}<div class="card"><h2>${esc(cap(name))}</h2><p>${esc(cap(name))} didn't turn in picks this season.</p></div>`;
+  const rows=standings(); const me=rows.find(r=>r.name===name); const leader=rows[0];
   const playoffDone=games.filter(g=>isDone(g)&&g.playoff).length;
   const upcoming=games.filter(g=>!isDone(g));
-  const rootFor = leader.name===name ? [] : upcoming.filter(g=>g.picks[pi]!==g.picks[leader.pi] && (g.picks[pi]===g.a||g.picks[pi]===g.h));
+  const rootFor = leader.name===name ? [] : upcoming.filter(g=>!same(pickOf(name,g),pickOf(leader.name,g)) && (same(pickOf(name,g),g.a)||same(pickOf(name,g),g.h)));
   const behind = leader.pts-me.pts;
-  const canCatch = me.remain >= behind;
-  const status = leader.name===name ? "🏆 You're in first place!" :
+  const subj = you ? "You're" : `${esc(cap(name))} is`;
+  const status = leader.name===name ? `🏆 ${subj} in first place!` :
     upcoming.length===0 ? "Season complete." :
-    canCatch ? `You're ${behind} points behind ${cap(leader.name)} with ${me.remain} points still possible.` :
-    `You're ${behind} points behind ${cap(leader.name)} — only ${me.remain} points left, so first place is out of reach.`;
+    me.remain>=behind ? `${subj} ${behind} points behind ${esc(cap(leader.name))} with ${me.remain} points still possible.` :
+    `${subj} ${behind} points behind ${esc(cap(leader.name))}. Only ${me.remain} points are left, so first place is out of reach.`;
 
-  return `<div class="chips" style="margin-bottom:16px">${[...PEOPLE].sort().map(p=>`<a class="${p===name?"on":""}" href="#/member/${p}">${cap(p)}</a>`).join("")}</div>
-  <div class="card"><h2>${cap(name)}</h2>
+  return `${chips}
+  <div class="card"><h2>${esc(cap(name))}</h2>
    <div class="big">
     <div class="stat"><div class="v ${rankCls(me.rank)}">#${me.rank}</div><div class="l">Current rank</div></div>
     <div class="stat"><div class="v">${me.pts}</div><div class="l">Total points</div></div>
@@ -232,105 +383,171 @@ function viewMember(name){
     <div class="stat"><div class="v">${me.po}<span class="muted" style="font-size:22px"> / ${playoffDone}</span></div><div class="l">Playoff picks correct</div></div>
     <div class="stat"><div class="v">${me.remain}</div><div class="l">Points still possible</div></div>
    </div>
-   <p style="margin:14px 0 0"><b>Tiebreakers:</b> ${me.ot} overtime games · Championship score: <span class="muted">not recorded</span></p>
+   <p style="margin:14px 0 0"><b>Tiebreakers:</b> ${esc(me.ot??"—")} overtime games · championship score ${me.score!==null&&me.score!==undefined?esc(me.score):`<span class="muted">not entered</span>`}</p>
   </div>
-  <div class="card root"><h2>What I need to win</h2><p>${status}</p>
-   ${rootFor.length?`<table><thead><tr><th>Game</th><th>Root for</th><th class="hide-sm">${cap(leader.name)} picked</th><th class="num">Pts</th></tr></thead><tbody>
-    ${rootFor.map(g=>`<tr><td>${g.date} · ${g.bowl}</td><td class="w">${g.picks[pi]}</td><td class="hide-sm">${g.picks[leader.pi]}</td><td class="num">${g.pts}</td></tr>`).join("")}</tbody></table>`
-    : (upcoming.length&&leader.name!==name?`<p class="muted">You and ${cap(leader.name)} picked the same team in every game left.</p>`:"")}
+  <div class="card root"><h2>${you?"What I need to win":`What ${esc(cap(name))} needs to win`}</h2><p>${status}</p>
+   ${rootFor.length?`<table><thead><tr><th>Game</th><th>Root for</th><th class="hide-sm">${esc(cap(leader.name))} picked</th><th class="num">Pts</th></tr></thead><tbody>
+    ${rootFor.map(g=>`<tr><td>${esc(g.date)} · ${esc(g.bowl)}</td><td class="w">${esc(pickOf(name,g))}</td><td class="hide-sm">${esc(pickOf(leader.name,g))}</td><td class="num">${g.pts}</td></tr>`).join("")}</tbody></table>`
+    : (upcoming.length&&leader.name!==name?`<p class="muted">Same picks as ${esc(cap(leader.name))} in every game left.</p>`:"")}
   </div>
-  <div class="card"><h2>My picks</h2>
-   <table><thead><tr><th>Date</th><th>Game</th><th>My pick</th><th class="num">Pts</th></tr></thead><tbody>
-   ${games.map(g=>{const pick=g.picks[pi];const done=isDone(g);const ok=done&&pick===g.winner;
-     const cls=!done?"p":ok?"w":"x";
-     return `<tr><td>${g.date}</td><td>${g.round?`<span class="tag cfp">${g.round}</span> `:""}${g.a} vs ${g.h}<div class="muted" style="font-size:14px">${g.bowl}</div></td><td class="${cls}">${pick}</td><td class="num ${cls}">${!done?"—":ok?"+"+g.pts:"0"}</td></tr>`;}).join("")}
+  <div class="card"><h2>${you?"My picks":`${esc(cap(name))}'s picks`}</h2>
+   <table><thead><tr><th>Date</th><th>Game</th><th>Pick</th><th class="num">Pts</th></tr></thead><tbody>
+   ${games.map(g=>{const pick=pickOf(name,g);const done=isDone(g);const ok=done&&same(pick,g.winner);const cls=!done?"p":ok?"w":"x";
+     return `<tr><td>${esc(g.date)}</td><td>${g.round?`<span class="tag cfp">${esc(g.round)}</span> `:""}${esc(g.a)} vs ${esc(g.h)}<div class="muted" style="font-size:14px">${esc(g.bowl)}</div></td><td class="${cls}">${esc(pick||"—")}</td><td class="num ${cls}">${!done?"—":ok?"+"+g.pts:"0"}</td></tr>`;}).join("")}
    </tbody></table></div>`;
 }
 
 function viewPicks(){
+  if(!META.locked) return `${modeNote()}<div class="card"><h2>Everyone's picks</h2><p>🔒 Hidden until picks lock on ${esc(lockText())}, so nobody can copy.</p>${bigBtn("#/members","← Back to Picks")}</div>${submittedList()}`;
+  const ps = players();
   return `<div class="card"><h2>Everyone's picks</h2><p class="muted" style="margin-top:0">Green = right, red = wrong, yellow = not played yet. Scroll sideways to see everyone.</p>
-  <div class="scroll"><table class="grid"><thead><tr><th>Game</th>${PEOPLE.map(p=>`<th><a href="#/member/${p}" style="color:#fff">${cap(p)}</a></th>`).join("")}</tr></thead><tbody>
-  ${games.map(g=>`<tr><th>${g.date} ${g.a} vs ${g.h} <span class="muted">(${g.pts})</span></th>${g.picks.map(pk=>{const c=!isDone(g)?"p":pk===g.winner?"w":"x";return `<td class="${c}">${pk}</td>`;}).join("")}</tr>`).join("")}
+  <div class="scroll"><table class="grid"><thead><tr><th>Game</th>${ps.map(p=>`<th class="${isMe(p)?"mycol":""}"><a href="#/member/${nameKey(p)}" style="color:#fff">${star(p)}</a></th>`).join("")}</tr></thead><tbody>
+  ${games.map(g=>`<tr><th>${esc(g.date)} ${esc(g.a)} vs ${esc(g.h)} <span class="muted">(${g.pts})</span></th>${ps.map(p=>{const pk=pickOf(p,g);const c=!isDone(g)?"p":same(pk,g.winner)?"w":"x";return `<td class="${c} ${isMe(p)?"mycol":""}">${esc(pk)}</td>`;}).join("")}</tr>`).join("")}
   </tbody></table></div></div>`;
 }
 
 function viewSchedule(){
-  return `<div class="card"><h2>Schedule & results</h2><table><thead><tr><th>Date</th><th>Bowl</th><th>Matchup</th><th class="hide-sm">TV</th><th class="num">Pts</th><th>Winner</th></tr></thead><tbody>
-  ${games.map(g=>`<tr><td>${g.date}<div class="muted" style="font-size:14px">${g.time}</div></td><td>${g.round?`<span class="tag cfp">${g.round}</span><br>`:""}${g.bowl}</td><td>${g.a} vs ${g.h}</td><td class="hide-sm">${g.tv}</td><td class="num">${g.pts}</td><td class="${isDone(g)?"w":"p"}">${isDone(g)?g.winner:"Upcoming"}</td></tr>`).join("")}
-  </tbody></table></div>`;
+  return `${modeNote()}<div class="card"><h2>Schedule & results</h2>${games.length?`<table><thead><tr><th>Date</th><th>Bowl</th><th>Matchup</th><th class="hide-sm">TV</th><th class="num">Pts</th><th>Winner</th></tr></thead><tbody>
+  ${games.map(g=>`<tr><td>${esc(g.date)}<div class="muted" style="font-size:14px">${esc(g.time)}</div></td><td>${g.round?`<span class="tag cfp">${esc(g.round)}</span><br>`:""}${esc(g.bowl)}</td><td>${esc(g.a)} vs ${esc(g.h)}</td><td class="hide-sm">${esc(g.tv)}</td><td class="num">${g.pts}</td><td class="${isDone(g)?"w":"p"}">${isDone(g)?esc(g.winner):"Upcoming"}</td></tr>`).join("")}
+  </tbody></table>`:"<p>This season's games haven't been added yet.</p>"}</div>`;
 }
 
 function viewHistory(){
-  const yrs=Object.keys(HISTORY);
+  const yrs=Object.keys(HISTORY).sort((a,b)=>b-a);
   const n=Math.max(...yrs.map(y=>HISTORY[y].length));
   return `<div class="card"><h2>Past champions & standings</h2>
   <table><thead><tr><th class="num">#</th>${yrs.map(y=>`<th>${y}</th>`).join("")}</tr></thead><tbody>
-  ${Array.from({length:n},(_,i)=>`<tr><td class="rank ${rankCls(i+1)}">${i+1}</td>${yrs.map(y=>`<td>${HISTORY[y][i]?(i===0?"🏆 ":"")+cap(HISTORY[y][i]):""}</td>`).join("")}</tr>`).join("")}
+  ${Array.from({length:n},(_,i)=>`<tr><td class="rank ${rankCls(i+1)}">${i+1}</td>${yrs.map(y=>`<td>${HISTORY[y][i]?(i===0?"🏆 ":"")+esc(cap(HISTORY[y][i])):""}</td>`).join("")}</tr>`).join("")}
   </tbody></table></div>`;
 }
 
-// ---------- ADMIN ----------
-function hashKey(s){let h=5381;for(const c of s)h=(Math.imul(h,33)^c.charCodeAt(0))>>>0;return h;}
-window.setAdminKey = k => console.log("Replace ADMIN_KEY_HASH in the file with:", hashKey(k));
-let unlocked=false; try{unlocked=sessionStorage.getItem("pickem-admin")==="1";}catch(e){}
-window.unlock=()=>{const k=document.getElementById("key").value;
-  if(hashKey(k)===ADMIN_KEY_HASH){unlocked=true;try{sessionStorage.setItem("pickem-admin","1");}catch(e){}render();}
-  else document.getElementById("keymsg").textContent="That key isn't right.";};
-window.lockAdmin=()=>{unlocked=false;try{sessionStorage.removeItem("pickem-admin");}catch(e){}location.hash="#/";};
-window.setWinner=(i,v)=>{results.w[i]=v;saveResults();render(true);};
-window.setOT=v=>{results.ot=v===""?null:+v;saveResults();};
-window.clearAll=()=>{if(confirm("Erase every result? Use this at the start of a new season.")){results={w:games.map(()=>""),ot:null};saveResults();render(true);}};
-window.loadLastSeason=()=>{results=lastSeasonResults();saveResults();render(true);};
-window.downloadSite=()=>{
-  const clone=document.documentElement.cloneNode(true);
-  ["#app","#nav","#asof"].forEach(s=>clone.querySelector(s).innerHTML="");
-  let html="<!DOCTYPE html>\n"+clone.outerHTML;
-  html=html.replace(/\/\*RESULTS_START\*\/[\s\S]*?\/\*RESULTS_END\*\//,()=>"/*RESULTS_START*/const SAVED_RESULTS = "+JSON.stringify(results)+";/*RESULTS_END*/");
-  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([html],{type:"text/html"}));a.download="bowl-pickem.html";a.click();
+// --- make my picks ---
+let draft = null;   // {name, picks:{gid:team}, ot, score}
+let submitMsg = "", submitting = false;
+function startDraft(){
+  const name = (ME && ME!==GUEST && NAMES.find(n=>same(n,ME))) || "";
+  const saved = name ? loadDraft(name) : null;
+  draft = saved && saved.picks ? {name, picks:{...saved.picks}, ot:saved.ot??"", score:saved.score??""} : {name, picks:{}, ot:"", score:""};
+}
+window.draftName = v => { const name = v===""?"":NAMES[+v]; const saved = name?loadDraft(name):null; draft = saved&&saved.picks ? {name,picks:{...saved.picks},ot:saved.ot??"",score:saved.score??""} : {name,picks:{},ot:"",score:""}; submitMsg=""; render(true); };
+window.draftPick = (gi,side) => { const g=games[gi]; draft.picks[g.id] = side==="A"?g.a:g.h; submitMsg=""; render(true); };
+window.draftNum = (k,v) => { draft[k]=v; };
+window.submitPicks = async () => {
+  if(submitting) return;
+  const missing = games.filter(g=>!draft.picks[g.id]).length;
+  if(!draft.name){ submitMsg="⚠ Pick your name at the top first."; render(true); return; }
+  if(missing){ submitMsg=`⚠ You still need to pick ${missing} game${missing>1?"s":""} (they're in yellow).`; render(true); return; }
+  if(draft.ot===""||draft.ot===null||isNaN(+draft.ot)||+draft.ot<0){ submitMsg="⚠ Enter how many bowl games will go to overtime."; render(true); return; }
+  if(draft.score===""||draft.score===null||isNaN(+draft.score)||+draft.score<0){ submitMsg="⚠ Enter your guess for the championship combined score."; render(true); return; }
+  submitting=true; submitMsg="Sending your picks…"; render(true);
+  const res = await post({action:"submitPicks", name:draft.name, picks:draft.picks, ot:+draft.ot, score:+draft.score});
+  submitting=false;
+  if(res.ok){
+    saveDraft(draft.name, {picks:draft.picks, ot:+draft.ot, score:+draft.score});
+    if(!META.submitted.some(s=>same(s,draft.name))) META.submitted.push(draft.name);
+    submitMsg="✅ Your picks are in! You can change them until picks lock.";
+    if(!ME || ME===GUEST){ ME=draft.name; store.set("pickem-me",ME); }
+  } else submitMsg="⚠ "+(res.error||"Something went wrong. Try again.");
+  render(true);
 };
-
-function viewAdmin(){
-  if(!unlocked) return `<div class="card" style="max-width:460px"><h2>🔒 Admin</h2><p>Enter the admin key to update game results.</p>
-    <input id="key" type="password" class="inp" placeholder="Admin key" onkeydown="if(event.key==='Enter')unlock()">
-    <button class="btn" onclick="unlock()">Unlock</button><p id="keymsg" style="color:var(--loss);font-weight:700"></p></div>`;
-  const done=games.filter(g=>g.winner).length;
-  return `<div class="card"><h2>Admin: enter results</h2>
-    <p style="margin-top:0">${done} of ${games.length} games have a winner. Tap the team that won. Changes show up right away on this computer.</p>
-    <p><b>When you're done:</b> tap <b>Download updated site</b> and send the new file to the family so they see the results.</p>
-    <div class="chips"><button class="btn" onclick="downloadSite()">⬇ Download updated site</button>
-    <button class="btn ghost" onclick="clearAll()">Clear all results</button>
-    <button class="btn ghost" onclick="loadLastSeason()">Load last season's results</button>
-    <button class="btn ghost" onclick="lockAdmin()">Lock admin</button></div>
-    <p style="margin-bottom:0"><b>Bowl games that went to overtime:</b>
-    <input class="inp" style="width:90px" type="number" min="0" value="${results.ot??""}" onchange="setOT(this.value)"></p></div>
+function viewSubmit(){
+  if(META.locked) return `${modeNote()}<div class="card"><h2>🔒 Picks are locked</h2><p>The deadline has passed, so picks can't be changed anymore. Good luck!</p>${bigBtn("#/","See the leaderboard →")}</div>`;
+  if(!draft) startDraft();
+  const sel = NAMES.findIndex(n=>same(n,draft.name));
+  const missing = games.filter(g=>!draft.picks[g.id]).length;
+  const msgColor = submitMsg.startsWith("✅") ? "var(--win)" : submitMsg.startsWith("⚠") ? "var(--loss)" : "var(--muted)";
+  return `${modeNote()}<div class="card you"><h2>Make my picks</h2>
+    <p style="margin-top:0">Tap the team you think will win each game. Picks lock ${esc(lockText())}.</p>
+    <label><b>I am:</b> <select class="inp" onchange="draftName(this.value)"><option value="">Choose your name…</option>${NAMES.map((n,i)=>`<option value="${i}" ${i===sel?"selected":""}>${esc(cap(n))}</option>`).join("")}</select></label>
+    <p style="margin:6px 0 0" class="muted">${games.length-missing} of ${games.length} games picked</p></div>
   <div class="card"><table><tbody>
-  ${games.map(g=>{const w=results.w[g.i];return `<tr><td>${g.date}<div class="muted" style="font-size:14px">${g.round?`<span class="tag cfp">${g.round}</span> `:""}${g.bowl} · ${g.pts} pts</div></td>
+  ${games.map(g=>{const p=draft.picks[g.id];return `<tr class="${p?"":"needpick"}"><td>${esc(g.date)}<div class="muted" style="font-size:14px">${g.round?`<span class="tag cfp">${esc(g.round)}</span> `:""}${esc(g.bowl)} · ${g.pts} pts</div></td>
    <td><div class="chips">
-    <button class="btn pick ${w==="A"?"sel":""}" onclick="setWinner(${g.i},'A')">${g.a}</button>
-    <button class="btn pick ${w==="H"?"sel":""}" onclick="setWinner(${g.i},'H')">${g.h}</button>
-    <button class="btn ghost ${!w?"selp":""}" onclick="setWinner(${g.i},'')">Not played</button></div></td></tr>`;}).join("")}
-  </tbody></table></div>`;
+    <button class="btn pick ${same(p,g.a)?"sel":""}" onclick="draftPick(${g.i},'A')">${esc(g.a)}</button>
+    <button class="btn pick ${same(p,g.h)?"sel":""}" onclick="draftPick(${g.i},'H')">${esc(g.h)}</button></div></td></tr>`;}).join("")}
+  </tbody></table></div>
+  <div class="card"><h2>Tiebreakers</h2>
+   <p><b>How many bowl games will go to overtime?</b><br><input class="inp" type="number" min="0" inputmode="numeric" value="${esc(draft.ot)}" oninput="draftNum('ot',this.value)"></p>
+   <p><b>National Championship: total points scored by both teams?</b><br><input class="inp" type="number" min="0" inputmode="numeric" value="${esc(draft.score)}" oninput="draftNum('score',this.value)"></p>
+   <button class="btn" style="font-size:20px;padding:14px 22px" onclick="submitPicks()" ${submitting?"disabled":""}>${submitting?"Sending…":"Submit my picks"}</button>
+   <p id="submitmsg" style="font-weight:700;color:${msgColor};min-height:1.4em">${esc(submitMsg)}</p></div>`;
 }
 
-// ---------- ROUTER ----------
+// --- admin ---
+let ADMIN_PW = sess.get("pickem-admin-pw") || "";
+let adminMsg = "", adminBusy = false;
+window.adminLogin = async () => {
+  const pw = document.getElementById("key").value;
+  if(!API_URL){ document.getElementById("keymsg").textContent="Connect the Google Sheet first (see the setup guide)."; return; }
+  document.getElementById("keymsg").textContent="Checking…";
+  const res = await post({action:"checkPassword", password:pw});
+  if(res.ok){ ADMIN_PW=pw; sess.set("pickem-admin-pw",pw); adminMsg=""; render(); }
+  else document.getElementById("keymsg").textContent = res.error || "That password isn't right.";
+};
+window.adminLogout = () => { ADMIN_PW=""; sess.del("pickem-admin-pw"); asOf=Infinity; location.hash="#/"; render(); };
+async function adminSend(body, okText){
+  adminBusy=true; adminMsg="Saving…"; render(true);
+  const res = await post({...body, password:ADMIN_PW});
+  adminBusy=false;
+  if(res.ok){ adminMsg="✓ "+okText; await fetchData(); }
+  else { adminMsg="⚠ "+(res.error||"Couldn't save."); if(/password/i.test(res.error||"")){ ADMIN_PW=""; sess.del("pickem-admin-pw"); } }
+  render(true);
+}
+window.adminWinner = (gi,side) => { const g=games[gi]; const w = side==="A"?g.a : side==="H"?g.h : ""; if((g.winner||"")===w) return; g.winner = w||null; adminSend({action:"setWinner", gameId:g.id, winner:w}, w?`${w} saved as the winner.`:"Marked as not played."); };
+window.adminTiebreakers = () => { const ot=document.getElementById("ot").value, sc=document.getElementById("sc").value; adminSend({action:"setTiebreakers", ot, score:sc}, "Tiebreaker answers saved."); };
+window.setAsOf = v => { asOf = v==="all"?Infinity:+v; render(true); };
+function viewAdmin(){
+  if(!ADMIN_PW) return `<div class="card" style="max-width:480px"><h2>🔒 Admin</h2><p>Enter the admin password to update game results.</p>
+    <input id="key" type="password" class="inp" placeholder="Admin password" onkeydown="if(event.key==='Enter')adminLogin()">
+    <button class="btn" onclick="adminLogin()">Unlock</button><p id="keymsg" style="color:var(--loss);font-weight:700"></p></div>`;
+  const done=games.filter(g=>g.winner).length;
+  const sub = n => META.submitted.some(s=>same(s,n));
+  const missing = NAMES.filter(n=>!sub(n));
+  return `<div class="card"><h2>Admin</h2>
+    <p style="margin-top:0">${done} of ${games.length} games have a winner. Tap the team that won. It saves to your Google Sheet and everyone sees it when they open or refresh the site.</p>
+    <p class="muted" style="font-size:15px">You can also type winners straight into the <b>winner</b> column of the Games tab in the sheet.</p>
+    <p style="font-weight:700;min-height:1.4em;color:${adminMsg.startsWith("⚠")?"var(--loss)":"var(--win)"}">${esc(adminMsg)}</p>
+    <div class="chips"><button class="btn ghost" onclick="adminLogout()">Log out of admin</button></div></div>
+  <div class="card"><h2>Picks turned in: ${NAMES.length-missing.length} of ${NAMES.length}</h2>
+    ${missing.length?`<p style="margin:0"><b>Still waiting on:</b> ${missing.map(n=>esc(cap(n))).join(", ")}</p>`:`<p style="margin:0">✓ Everyone's in!</p>`}
+    <p class="muted" style="margin-bottom:0;font-size:15px">Picks lock ${esc(lockText())}. Change this in the Settings tab (PICKS_LOCK).</p></div>
+  <div class="card"><h2>Tiebreaker answers</h2><p class="muted" style="margin-top:0">Fill these in at the end of the season.</p>
+    <p><b>Bowl games that went to overtime:</b><br><input id="ot" class="inp" style="width:110px" type="number" min="0" value="${esc(META.ot??"")}"></p>
+    <p><b>Championship combined score:</b><br><input id="sc" class="inp" style="width:110px" type="number" min="0" value="${esc(META.score??"")}"></p>
+    <button class="btn" onclick="adminTiebreakers()" ${adminBusy?"disabled":""}>Save tiebreakers</button></div>
+  <div class="card"><h2>Game winners</h2><table><tbody>
+  ${games.map(g=>`<tr><td>${esc(g.date)}<div class="muted" style="font-size:14px">${g.round?`<span class="tag cfp">${esc(g.round)}</span> `:""}${esc(g.bowl)} · ${g.pts} pts</div></td>
+   <td><div class="chips">
+    <button class="btn pick ${g.winner===g.a?"sel":""}" onclick="adminWinner(${g.i},'A')" ${adminBusy?"disabled":""}>${esc(g.a)}</button>
+    <button class="btn pick ${g.winner===g.h?"sel":""}" onclick="adminWinner(${g.i},'H')" ${adminBusy?"disabled":""}>${esc(g.h)}</button>
+    <button class="btn ghost ${!g.winner?"selp":""}" onclick="adminWinner(${g.i},'')" ${adminBusy?"disabled":""}>Not played</button></div></td></tr>`).join("")}
+  </tbody></table></div>
+  <div class="card"><h2>Test mode</h2><p class="muted" style="margin-top:0">Only changes your own screen. Pretend only some games have been played to check the "what I need to win" pages.</p>
+    <select class="inp" onchange="setAsOf(this.value)"><option value="all">All games</option>${games.map((g,i)=>`<option value="${i+1}" ${asOf===i+1?"selected":""}>After game ${i+1}: ${esc(g.date)} ${esc(g.bowl)}</option>`).join("")}<option value="0" ${asOf===0?"selected":""}>No games played</option></select></div>`;
+}
+
+// ---------- router ----------
 function render(keepScroll){
   const h=location.hash||"#/";
   const y=window.scrollY;
-  if(h==="#/admin"){nav("");app.innerHTML=viewAdmin();window.scrollTo(0,keepScroll?y:0);return;}
-  if(h.startsWith("#/member/")){nav("#/members");app.innerHTML=viewMember(decodeURIComponent(h.slice(9)));}
-  else if(h==="#/picks"){nav(h);app.innerHTML=viewPicks();}
+  hello();
+  if(h==="#/admin"){nav("");app.innerHTML=viewAdmin();}
+  else if(MODE==="loading" && !NAMES.length){nav("");app.innerHTML=modeNote();}
+  else if(!ME || h==="#/welcome"){nav("");app.innerHTML=viewWelcome();}
+  else if(h.startsWith("#/member/")){nav("#/members");app.innerHTML=viewMember(decodeURIComponent(h.slice(9)));}
+  else if(h==="#/picks"){nav("#/members");app.innerHTML=viewPicks();}
+  else if(h==="#/submit"){nav("#/members");app.innerHTML=viewSubmit();}
   else if(h==="#/schedule"){nav(h);app.innerHTML=viewSchedule();}
   else if(h==="#/members"){nav(h);app.innerHTML=viewMembers();}
   else if(h==="#/history"){nav(h);app.innerHTML=viewHistory();}
   else {nav("#/");app.innerHTML=viewLeaderboard();}
-  window.scrollTo(0,0);
+  window.scrollTo(0,keepScroll?y:0);
 }
-const sel=document.getElementById("asof");
-sel.innerHTML=games.map((g,i)=>`<option value="${i+1}">game ${i+1}: ${g.date} ${g.bowl}</option>`).join("")+`<option value="0">no games (before the season)</option>`;
-sel.value=String(games.length);
-sel.onchange=()=>{asOf=+sel.value;render();};
-window.addEventListener("hashchange",render);
+window.addEventListener("hashchange",()=>{ if(location.hash!=="#/submit") submitMsg=""; render(); });
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible" && API_URL && !location.hash.startsWith("#/submit")) fetchData().then(()=>render(true)); });
+if(!API_URL) loadDemo();
 render();
+fetchData().then(()=>render(true));
 </script>
 </body>
 </html>
