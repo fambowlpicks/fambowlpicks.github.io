@@ -142,6 +142,7 @@ const G = [
 ];
 
 const HISTORY = {
+  "2026":["JAIME","NAT","JIMMY","JERRICKA","LANDON","DERRICK","DALE","BRAYLON","ASHTON","LANCE","ANDI","MICHELLE","PARKER","ALLY","EMERY","BRYANA","REAGAN","MATT","NANA","KASH"],
   "2025":["NANA","BRAYLON","DERRICK","MATT","NAT","KASH","ALLY","LANCE","JIMMY","ANDI","PARKER","LANDON","JERRICKA","BRYANA","MICHELLE","JAIME","REAGAN","DALE","EMERY"],
   "2024":["KASH","ALLY","ANDI","LANCE","DERRICK","MATT","JERRICKA","PARKER","JIMMY","LANDON","REAGAN","JAIME","MICHELLE","NAT","BRYANA","NANA","PAPAW"],
   "2023":["MATT","LANCE","BRIAN","PAPAW","REAGAN","NANA","MICHELLE","DERRICK","JAIME","JIMMY","ALLY","JERRICKA","KASH","ANDI","PARKER","BRYANA","LANDON"],
@@ -246,7 +247,7 @@ function standings(){
 }
 
 const lastResult = () => { const d=games.filter(isDone); if(!d.length) return "No games played yet"; const g=d[d.length-1]; return `Last Updated: ${esc(g.winner)} over ${esc(g.winner===g.a?g.h:g.a)}`; };
-const lockText = () => META.lockAt ? new Date(META.lockAt).toLocaleString([], {weekday:"short", month:"short", day:"numeric", hour:"numeric", minute:"2-digit"}) : "the first kickoff";
+const lockText = () => META.lockAt ? "on " + new Date(META.lockAt).toLocaleString([], {weekday:"short", month:"short", day:"numeric", hour:"numeric", minute:"2-digit"}) : "at the first kickoff";
 
 // ---------- who am I (saved on this device) ----------
 let ME = store.get("pickem-me");
@@ -301,9 +302,11 @@ function submittedList(){
   const count = NAMES.filter(sub).length;
   return `<div class="card"><h2>Who's turned in picks <span class="muted" style="font-size:18px">(${count} of ${NAMES.length})</span></h2>
    <div class="chips">${namesMeFirst().map(n=>`<span class="chip ${sub(n)?"w":"p"}">${sub(n)?"✓":"…"} ${star(n)}</span>`).join("")}</div>
-   <p class="muted" style="margin-bottom:0;font-size:15px">Everyone's picks show up here once picks lock on ${esc(lockText())}.</p></div>`;
+   <p class="muted" style="margin-bottom:0;font-size:15px">Everyone's picks show up here once picks lock ${esc(lockText())}.</p></div>`;
 }
+const noGamesCard = () => `<div class="card you"><h2 style="margin-bottom:6px">🗓 This season's games aren't posted yet</h2><p style="margin:0">Once the bowl matchups are announced, they'll show up here and you can make your picks. Check back soon!</p></div>`;
 function viewPicksOpen(){
+  if(!games.length) return `${modeNote()}<div class="banner">🏈 ${META.season?esc(META.season)+" ":""}Bowl Pick'em is coming soon!</div>${noGamesCard()}${submittedList()}`;
   const mineIn = ME && ME!==GUEST && META.submitted.some(s=>same(s,ME));
   return `${modeNote()}<div class="banner">🏈 Picks are open! They lock ${esc(lockText())}.</div>
    <div class="card you"><h2 style="margin-bottom:6px">${mineIn?"✓ Your picks are in":"Make your picks"}</h2>
@@ -336,7 +339,7 @@ function viewLeaderboard(){
 const allBtn = `<a href="#/picks" style="background:var(--brand);color:#fff;border-color:var(--brand)">ALL</a>`;
 function viewMembers(){
   const open = !META.locked;
-  return `${modeNote()}${open?`<div class="card you"><h2 style="margin-bottom:6px">Picks are open</h2><p style="margin:0 0 12px">They lock ${esc(lockText())}.</p>${bigBtn("#/submit","Make my picks →")}</div>`:""}
+  return `${modeNote()}${open&&!games.length?noGamesCard():""}${open&&games.length?`<div class="card you"><h2 style="margin-bottom:6px">Picks are open</h2><p style="margin:0 0 12px">They lock ${esc(lockText())}.</p>${bigBtn("#/submit","Make my picks →")}</div>`:""}
   <div class="card"><h2>Picks</h2><p style="margin-top:0">Tap a name to see that person's picks, or <b>ALL</b> to see everyone's.</p>
   <div class="chips">${namesMeFirst().map(p=>`<a href="#/member/${nameKey(p)}">${star(p)}</a>`).join("")}${allBtn}</div></div>`;
 }
@@ -352,12 +355,12 @@ function viewMember(rawName){
     const isIn = META.submitted.some(s=>same(s,name));
     let body;
     if(d && d.picks){
-      body = `<p>${isIn?"✓ Your picks are in.":"You haven't submitted yet."} Only you can see these until picks lock on ${esc(lockText())}.</p>
+      body = `<p>${isIn?"✓ Your picks are in.":"You haven't submitted yet."} Only you can see these until picks lock ${esc(lockText())}.</p>
        <p>${bigBtn("#/submit","Change my picks →")}</p>
        <table><tbody>${games.map(g=>`<tr><td>${esc(g.date)} · ${esc(g.bowl)}</td><td class="p">${esc(d.picks[g.id]||"—")}</td></tr>`).join("")}</tbody></table>
        <p><b>Tiebreakers:</b> ${esc(d.ot??"—")} overtime games · championship score ${esc(d.score??"—")}</p>`;
     } else {
-      body = `<p>${isIn?"✓ Picks are in.":"No picks yet."} Everyone's picks are hidden until picks lock on ${esc(lockText())}.</p>${isMe(name)?bigBtn("#/submit","Make my picks →"):""}`;
+      body = `<p>${isIn?"✓ Picks are in.":"No picks yet."} Everyone's picks are hidden until picks lock ${esc(lockText())}.</p>${isMe(name)&&games.length?bigBtn("#/submit","Make my picks →"):""}`;
     }
     return `${chips}<div class="card"><h2>${esc(cap(name))}</h2>${body}</div>`;
   }
@@ -398,7 +401,7 @@ function viewMember(rawName){
 }
 
 function viewPicks(){
-  if(!META.locked) return `${modeNote()}<div class="card"><h2>Everyone's picks</h2><p>🔒 Hidden until picks lock on ${esc(lockText())}, so nobody can copy.</p>${bigBtn("#/members","← Back to Picks")}</div>${submittedList()}`;
+  if(!META.locked) return `${modeNote()}<div class="card"><h2>Everyone's picks</h2><p>🔒 Hidden until picks lock ${esc(lockText())}, so nobody can copy.</p>${bigBtn("#/members","← Back to Picks")}</div>${submittedList()}`;
   const ps = players();
   return `<div class="card"><h2>Everyone's picks</h2><p class="muted" style="margin-top:0">Green = right, red = wrong, yellow = not played yet. Scroll sideways to see everyone.</p>
   <div class="scroll"><table class="grid"><thead><tr><th>Game</th>${ps.map(p=>`<th class="${isMe(p)?"mycol":""}"><a href="#/member/${nameKey(p)}" style="color:#fff">${star(p)}</a></th>`).join("")}</tr></thead><tbody>
@@ -436,6 +439,7 @@ window.submitPicks = async () => {
   if(submitting) return;
   const missing = games.filter(g=>!draft.picks[g.id]).length;
   if(!draft.name){ submitMsg="⚠ Pick your name at the top first."; render(true); return; }
+  if(!games.length){ submitMsg="⚠ This season's games aren't posted yet."; render(true); return; }
   if(missing){ submitMsg=`⚠ You still need to pick ${missing} game${missing>1?"s":""} (they're in yellow).`; render(true); return; }
   if(draft.ot===""||draft.ot===null||isNaN(+draft.ot)||+draft.ot<0){ submitMsg="⚠ Enter how many bowl games will go to overtime."; render(true); return; }
   if(draft.score===""||draft.score===null||isNaN(+draft.score)||+draft.score<0){ submitMsg="⚠ Enter your guess for the championship combined score."; render(true); return; }
@@ -452,6 +456,7 @@ window.submitPicks = async () => {
 };
 function viewSubmit(){
   if(META.locked) return `${modeNote()}<div class="card"><h2>🔒 Picks are locked</h2><p>The deadline has passed, so picks can't be changed anymore. Good luck!</p>${bigBtn("#/","See the leaderboard →")}</div>`;
+  if(!games.length) return `${modeNote()}${noGamesCard()}`;
   if(!draft) startDraft();
   const sel = NAMES.findIndex(n=>same(n,draft.name));
   const missing = games.filter(g=>!draft.picks[g.id]).length;
