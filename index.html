@@ -434,7 +434,7 @@ function startDraft(){
   const name = (ME && ME!==GUEST && NAMES.find(n=>same(n,ME))) || "";
   draft = {name, picks:{}, ot:"", score:""};
 }
-window.draftName = v => { draft = {name: v===""?"":NAMES[+v], picks:{}, ot:"", score:""}; submitMsg=""; confirmArmed=false; render(true); };
+window.draftName = v => { draft = {name: v===""?"":NAMES[+v], picks:{}, ot:"", score:""}; submitMsg=""; confirmArmed=false; render(true); if(API_URL) fetchData().then(()=>render(true)); };
 window.draftPick = (gi,side) => { const g=games[gi]; draft.picks[g.id] = side==="A"?g.a:g.h; submitMsg=""; confirmArmed=false; render(true); };
 window.draftNum = (k,v) => { draft[k]=v; };
 function draftProblem(){
@@ -587,7 +587,14 @@ function render(keepScroll){
   else {nav("#/");app.innerHTML=viewLeaderboard();}
   window.scrollTo(0,keepScroll?y:0);
 }
-window.addEventListener("hashchange",()=>{ if(location.hash!=="#/submit") submitMsg=""; render(); });
+window.addEventListener("hashchange",()=>{
+  if(location.hash!=="#/submit") submitMsg="";
+  render();
+  // opening Make My Picks: re-check the sheet so "already submitted" is always current
+  if(location.hash==="#/submit" && API_URL && !submitting){
+    fetchData().then(()=>{ if(location.hash==="#/submit") render(true); });
+  }
+});
 document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible" && API_URL && !location.hash.startsWith("#/submit")) fetchData().then(()=>render(true)); });
 if(!API_URL) loadDemo();
 render();
