@@ -269,7 +269,7 @@ const saveDraft = (n,d) => store.set(draftKey(n), JSON.stringify(d));
 // ---------- views ----------
 const app=document.getElementById("app");
 function nav(active){
-  const links=[["#/","Leaderboard"],["#/members","Picks"],["#/schedule","Schedule"],["#/history","History"]];
+  const links=[["#/","Leaderboard"],["#/submit","Make My Picks"],["#/members","Picks"],["#/schedule","Schedule"],["#/history","History"]];
   document.getElementById("nav").innerHTML=links.map(([h,t])=>`<a href="${h}" class="${active===h?"on":""}">${t}</a>`).join("");
 }
 const rankCls = r => r===1?"r1":r===2?"r2":r===3?"r3":"";
@@ -312,8 +312,8 @@ function viewPicksOpen(){
   const mineIn = ME && ME!==GUEST && META.submitted.some(s=>same(s,ME));
   return `${modeNote()}<div class="banner">🏈 Picks are open! They lock ${esc(lockText())}.</div>
    <div class="card you"><h2 style="margin-bottom:6px">${mineIn?"✓ Your picks are in":"Make your picks"}</h2>
-   <p style="margin:0 0 12px">${mineIn?"You can still change them until picks lock.":"Pick a winner for every game, plus two tiebreaker guesses."}</p>
-   ${bigBtn("#/submit", mineIn?"Change my picks →":"Make my picks →")}</div>
+   <p style="margin:0 0 12px">${mineIn?"Picks can only be turned in once. Everyone's picks show up when picks lock.":"Pick a winner for every game, plus two tiebreaker guesses. You can only turn them in once."}</p>
+   ${bigBtn("#/submit", mineIn?"See what I picked →":"Make my picks →")}</div>
    ${submittedList()}`;
 }
 
@@ -358,7 +358,7 @@ function viewMember(rawName){
     let body;
     if(d && d.picks){
       body = `<p>${isIn?"✓ Your picks are in.":"You haven't submitted yet."} Only you can see these until picks lock ${esc(lockText())}.</p>
-       <p>${bigBtn("#/submit","Change my picks →")}</p>
+       <p>${bigBtn("#/submit","See what I picked →")}</p>
        <table><tbody>${games.map(g=>`<tr><td>${esc(g.date)} · ${esc(g.bowl)}</td><td class="p">${esc(d.picks[g.id]||"—")}</td></tr>`).join("")}</tbody></table>
        <p><b>Tiebreakers:</b> ${esc(d.ot??"—")} overtime games · championship score ${esc(d.score??"—")}</p>`;
     } else {
@@ -426,47 +426,80 @@ function viewHistory(){
   </tbody></table></div>`;
 }
 
-// --- make my picks ---
+// --- make my picks (one submission per person) ---
 let draft = null;   // {name, picks:{gid:team}, ot, score}
-let submitMsg = "", submitting = false;
+let submitMsg = "", submitting = false, confirmArmed = false;
+const hasSubmitted = n => !!n && META.submitted.some(s=>same(s,n));
 function startDraft(){
   const name = (ME && ME!==GUEST && NAMES.find(n=>same(n,ME))) || "";
-  const saved = name ? loadDraft(name) : null;
-  draft = saved && saved.picks ? {name, picks:{...saved.picks}, ot:saved.ot??"", score:saved.score??""} : {name, picks:{}, ot:"", score:""};
+  draft = {name, picks:{}, ot:"", score:""};
 }
-window.draftName = v => { const name = v===""?"":NAMES[+v]; const saved = name?loadDraft(name):null; draft = saved&&saved.picks ? {name,picks:{...saved.picks},ot:saved.ot??"",score:saved.score??""} : {name,picks:{},ot:"",score:""}; submitMsg=""; render(true); };
-window.draftPick = (gi,side) => { const g=games[gi]; draft.picks[g.id] = side==="A"?g.a:g.h; submitMsg=""; render(true); };
+window.draftName = v => { draft = {name: v===""?"":NAMES[+v], picks:{}, ot:"", score:""}; submitMsg=""; confirmArmed=false; render(true); };
+window.draftPick = (gi,side) => { const g=games[gi]; draft.picks[g.id] = side==="A"?g.a:g.h; submitMsg=""; confirmArmed=false; render(true); };
 window.draftNum = (k,v) => { draft[k]=v; };
+function draftProblem(){
+  const missing = games.filter(g=>!draft.picks[g.id]).length;
+  if(!draft.name) return "Choose your name at the top first.";
+  if(missing) return `You still need to pick ${missing} game${missing>1?"s":""} (they're highlighted yellow).`;
+  if(draft.ot===""||draft.ot===null||isNaN(+draft.ot)||+draft.ot<0) return "Enter how many bowl games will go to overtime.";
+  if(draft.score===""||draft.score===null||isNaN(+draft.score)||+draft.score<0) return "Enter your guess for the championship combined score.";
+  return "";
+}
 window.submitPicks = async () => {
   if(submitting) return;
-  const missing = games.filter(g=>!draft.picks[g.id]).length;
-  if(!draft.name){ submitMsg="⚠ Pick your name at the top first."; render(true); return; }
-  if(!games.length){ submitMsg="⚠ This season's games aren't posted yet."; render(true); return; }
-  if(missing){ submitMsg=`⚠ You still need to pick ${missing} game${missing>1?"s":""} (they're in yellow).`; render(true); return; }
-  if(draft.ot===""||draft.ot===null||isNaN(+draft.ot)||+draft.ot<0){ submitMsg="⚠ Enter how many bowl games will go to overtime."; render(true); return; }
-  if(draft.score===""||draft.score===null||isNaN(+draft.score)||+draft.score<0){ submitMsg="⚠ Enter your guess for the championship combined score."; render(true); return; }
-  submitting=true; submitMsg="Sending your picks…"; render(true);
+  const problem = draftProblem();
+  if(problem){ submitMsg="⚠ "+problem; confirmArmed=false; render(true); return; }
+  if(!confirmArmed){ confirmArmed=true; submitMsg=""; render(true); return; }   // first tap: ask to confirm
+  confirmArmed=false; submitting=true; submitMsg="Sending your picks…"; render(true);
   const res = await post({action:"submitPicks", name:draft.name, picks:draft.picks, ot:+draft.ot, score:+draft.score});
   submitting=false;
   if(res.ok){
     saveDraft(draft.name, {picks:draft.picks, ot:+draft.ot, score:+draft.score});
-    if(!META.submitted.some(s=>same(s,draft.name))) META.submitted.push(draft.name);
-    submitMsg="✅ Your picks are in! You can change them until picks lock.";
+    if(!hasSubmitted(draft.name)) META.submitted.push(draft.name);
     if(!ME || ME===GUEST){ ME=draft.name; store.set("pickem-me",ME); }
+    submitMsg="✅ Your picks are in! Good luck!";
   } else submitMsg="⚠ "+(res.error||"Something went wrong. Try again.");
   render(true);
 };
+window.cancelConfirm = () => { confirmArmed=false; render(true); };
+
+function picksTable(picks){
+  return `<table><tbody>${games.map(g=>`<tr><td>${esc(g.date)} · ${esc(g.bowl)}<div class="muted" style="font-size:14px">${esc(g.a)} vs ${esc(g.h)}</div></td><td class="w">${esc(picks[g.id]||"—")}</td></tr>`).join("")}</tbody></table>`;
+}
+function siteStatusLine(){
+  if(MODE==="demo") return "Not connected to the Google Sheet (demo mode).";
+  if(MODE==="error") return "Couldn't reach the Google Sheet: "+LOAD_ERROR;
+  if(MODE==="loading") return "Loading from the Google Sheet…";
+  return `Connected to the Google Sheet · ${games.length} game${games.length===1?"":"s"} found · picks ${META.locked?"locked":"open"}${META.lockAt?" (deadline "+new Date(META.lockAt).toLocaleString()+")":" (no deadline set)"}`;
+}
 function viewSubmit(){
-  if(META.locked) return `${modeNote()}<div class="card"><h2>🔒 Picks are locked</h2><p>The deadline has passed, so picks can't be changed anymore. Good luck!</p>${bigBtn("#/","See the leaderboard →")}</div>`;
-  if(!games.length) return `${modeNote()}${noGamesCard()}`;
+  const status = `<p class="muted" style="font-size:13px;margin:16px 0 0">${esc(siteStatusLine())}</p>`;
+  if(MODE==="loading") return `${modeNote()}`;
+  if(MODE==="error") return `${modeNote()}<div class="card">${status}</div>`;
+  if(!games.length) return `<div class="card you"><h2>Make My Picks</h2><p style="margin:0">🗓 This season's games aren't posted yet. Once they're added, they'll show up here and you can make your picks.</p>${status}</div>`;
   if(!draft) startDraft();
-  const sel = NAMES.findIndex(n=>same(n,draft.name));
+  const name = draft.name;
+  const sel = NAMES.findIndex(n=>same(n,name));
+  const nameSelect = `<label><b>I am:</b> <select class="inp" onchange="draftName(this.value)"><option value="">Choose your name…</option>${NAMES.map((n,i)=>`<option value="${i}" ${i===sel?"selected":""}>${esc(cap(n))}${hasSubmitted(n)?" ✓":""}</option>`).join("")}</select></label>`;
+
+  // already turned in (or just did): show what they picked, no editing
+  if(hasSubmitted(name)){
+    const saved = loadDraft(name);
+    return `<div class="card you"><h2>✅ ${esc(cap(name))}, your picks are in</h2>
+      ${submitMsg.startsWith("✅")?`<p style="font-weight:700;color:var(--win)">${esc(submitMsg)}</p>`:""}
+      <p style="margin-top:0">Picks can only be turned in once. ${META.locked?"":`Everyone's picks will show up ${esc(lockText())}.`}</p>
+      ${nameSelect}
+      <p>${bigBtn("#/","Go to the home page →")}</p></div>
+      ${saved&&saved.picks?`<div class="card"><h2>What you picked</h2>${picksTable(saved.picks)}<p><b>Tiebreakers:</b> ${esc(saved.ot)} overtime games · championship score ${esc(saved.score)}</p></div>`:""}
+      <div class="card" style="padding:8px 16px">${status}</div>`;
+  }
+  if(META.locked) return `<div class="card"><h2>🔒 Picks are locked</h2><p>The deadline has passed, so new picks can't be turned in.</p>${nameSelect}<p>${bigBtn("#/","See the leaderboard →")}</p>${status}</div>`;
+
   const missing = games.filter(g=>!draft.picks[g.id]).length;
   const msgColor = submitMsg.startsWith("✅") ? "var(--win)" : submitMsg.startsWith("⚠") ? "var(--loss)" : "var(--muted)";
-  const hi = draft.name ? `${esc(cap(draft.name))}, make your picks` : "Make my picks";
-  return `${modeNote()}<div class="card you"><h2>${hi}</h2>
-    <p style="margin-top:0">Tap the team you think will win each game. Picks lock ${esc(lockText())}.</p>
-    <label><b>I am:</b> <select class="inp" onchange="draftName(this.value)"><option value="">Choose your name…</option>${NAMES.map((n,i)=>`<option value="${i}" ${i===sel?"selected":""}>${esc(cap(n))}</option>`).join("")}</select></label>
+  return `<div class="card you"><h2>${name?`${esc(cap(name))}, make your picks`:"Make My Picks"}</h2>
+    <p style="margin-top:0">Tap the team you think will win each game. You can only turn in picks <b>once</b>, so double-check before submitting. Picks lock ${esc(lockText())}.</p>
+    ${nameSelect}
     <p style="margin:6px 0 0" class="muted">${games.length-missing} of ${games.length} games picked</p></div>
   <div class="card"><table><tbody>
   ${games.map(g=>{const p=draft.picks[g.id];return `<tr class="${p?"":"needpick"}"><td>${esc(g.date)}<div class="muted" style="font-size:14px">${g.round?`<span class="tag cfp">${esc(g.round)}</span> `:""}${esc(g.bowl)} · ${g.pts} pts</div></td>
@@ -477,9 +510,11 @@ function viewSubmit(){
   <div class="card"><h2>Tiebreakers</h2>
    <p><b>How many bowl games will go to overtime?</b><br><input class="inp" type="number" min="0" inputmode="numeric" value="${esc(draft.ot)}" oninput="draftNum('ot',this.value)"></p>
    <p><b>National Championship: total points scored by both teams?</b><br><input class="inp" type="number" min="0" inputmode="numeric" value="${esc(draft.score)}" oninput="draftNum('score',this.value)"></p>
-   <button class="btn" style="font-size:20px;padding:14px 22px" onclick="submitPicks()" ${submitting?"disabled":""}>${submitting?"Sending…":"Submit my picks"}</button>
-   <p id="submitmsg" style="font-weight:700;color:${msgColor};min-height:1.4em">${esc(submitMsg)}</p>
-   ${submitMsg.startsWith("✅")?bigBtn("#/","Done, go to the home page →"):""}</div>`;
+   ${confirmArmed
+     ? `<p style="font-weight:700">Ready to turn in your picks? You won't be able to change them after this.</p>
+        <div class="chips"><button class="btn" style="font-size:20px;padding:14px 22px;background:var(--win);border-color:var(--win)" onclick="submitPicks()">Yes, submit my picks</button><button class="btn ghost" onclick="cancelConfirm()">Go back</button></div>`
+     : `<button class="btn" style="font-size:20px;padding:14px 22px" onclick="submitPicks()" ${submitting?"disabled":""}>${submitting?"Sending…":"Submit my picks"}</button>`}
+   <p id="submitmsg" style="font-weight:700;color:${msgColor};min-height:1.4em">${esc(submitMsg)}</p>${status}</div>`;
 }
 
 // --- admin ---
@@ -545,7 +580,7 @@ function render(keepScroll){
   else if(!ME || h==="#/welcome"){nav("");app.innerHTML=viewWelcome();}
   else if(h.startsWith("#/member/")){nav("#/members");app.innerHTML=viewMember(decodeURIComponent(h.slice(9)));}
   else if(h==="#/picks"){nav("#/members");app.innerHTML=viewPicks();}
-  else if(h==="#/submit"){nav("#/members");app.innerHTML=viewSubmit();}
+  else if(h==="#/submit"){nav("#/submit");app.innerHTML=viewSubmit();}
   else if(h==="#/schedule"){nav(h);app.innerHTML=viewSchedule();}
   else if(h==="#/members"){nav(h);app.innerHTML=viewMembers();}
   else if(h==="#/history"){nav(h);app.innerHTML=viewHistory();}
