@@ -32,7 +32,7 @@
   nav a:hover{border-color:var(--gold)}
   nav a.on{background:var(--gold);border-color:var(--gold);color:var(--black)}
 
-  main{max-width:1000px;margin:0 auto;padding:18px 16px 40px}
+  main{max-width:1160px;margin:0 auto;padding:18px 16px 40px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px}
   h2{font-family:var(--head);font-weight:600;font-size:26px;letter-spacing:.02em;margin:2px 0 12px;text-transform:capitalize}
   h3{font-family:var(--head);font-weight:600;font-size:20px;letter-spacing:.02em;margin:0 0 8px;text-transform:capitalize}
@@ -50,7 +50,7 @@
   a.person:hover{color:var(--goldDark)}
 
   /* name buttons (welcome + picks tab) */
-  .names{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+  .names{display:grid;grid-template-columns:repeat(auto-fill,minmax(172px,1fr));gap:10px}
   .names a,.names button{display:flex;align-items:center;justify-content:center;min-height:56px;padding:10px 12px;border-radius:10px;background:#fff;border:1.5px solid var(--line);color:var(--ink);text-decoration:none;font-family:var(--head);font-weight:600;font-size:19px;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;transition:all .12s}
   .names a:hover,.names button:hover{border-color:var(--gold);box-shadow:0 2px 0 var(--gold)}
   .names a.me{background:var(--gold);border-color:var(--gold);color:var(--black)}
@@ -148,6 +148,8 @@
   .av.lg{width:96px;height:96px;font-size:36px;border-width:4px;box-shadow:0 0 0 3px var(--gold),0 2px 6px rgba(0,0,0,.25)}
   .who{display:inline-flex;align-items:center;gap:10px}
   .names a,.names button{gap:10px}
+  .names a span{white-space:nowrap}
+  .names.faces{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
   .names.faces a{flex-direction:column;gap:6px;padding:12px 8px}
   .names.compact a{padding:6px 14px 6px 6px}
   .grid thead th.pcol{text-align:center}
@@ -157,7 +159,7 @@
   .hello .who{gap:8px}
 
   @media(max-width:700px){ .feed{grid-template-columns:1fr} }
-  @media(max-width:600px){ body{font-size:17px} .hide-sm{display:none} .brand span{font-size:21px} .names{grid-template-columns:repeat(2,1fr)} .stat .v{font-size:30px}
+  @media(max-width:600px){ body{font-size:17px} .hide-sm{display:none} .brand span{font-size:21px} .names,.names.faces{grid-template-columns:repeat(2,1fr)} .stat .v{font-size:30px}
     th,td{padding:9px 4px} th{font-size:11px;letter-spacing:.03em} .rank{width:34px;font-size:20px} .who{gap:6px} td .av.sm{width:28px;height:28px;font-size:12px} .names a{gap:6px;padding:8px 6px;font-size:17px;min-width:0} .names:not(.faces) .av:not(.sm){width:32px;height:32px;font-size:13px} }
 </style>
 </head>
@@ -462,7 +464,7 @@ const tvBadge = tv => {
 // Photos sit right next to index.html in the repo, named after each person: derrick.jpg
 // "Landon R" -> landon_r.jpg. Anyone without a photo gets a colored circle with their initials.
 // If someone's name on the site doesn't match their photo's file name, add them here:
-const PHOTO_ALIASES = { nat: "natalie" };
+const PHOTO_ALIASES = { nat: "natalie", landon_d: "landon" };
 const AV_COLORS = ["#1b1b1f","#8c6d14","#1d7a3a","#0b3d91","#b3261e","#5b2c83","#0e7490","#9a3412"];
 const photoKey = n => { const k=String(n||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,""); return PHOTO_ALIASES[k]||k; };
 const initials = n => String(n||"").trim().split(/\s+/).map(w=>w[0]||"").join("").slice(0,2).toUpperCase();
@@ -754,7 +756,7 @@ function viewHistory(){
   const n=Math.max(...yrs.map(y=>HISTORY[y].length));
   return `<div class="card"><h2>Past Champions & Standings</h2>
   <div style="overflow-x:auto"><table><thead><tr><th class="num">#</th>${yrs.map(y=>`<th>${y}</th>`).join("")}</tr></thead><tbody>
-  ${Array.from({length:n},(_,i)=>`<tr><td class="rank ${rankCls(i+1)}">${i+1}</td>${yrs.map(y=>`<td style="${i===0?"font-weight:700":""}">${HISTORY[y][i]?`<span class="who" style="gap:8px"><span class="hide-sm">${avatar(HISTORY[y][i],"xs")}</span>${esc(cap(HISTORY[y][i]))}</span>`:""}</td>`).join("")}</tr>`).join("")}
+  ${Array.from({length:n},(_,i)=>`<tr><td class="rank ${rankCls(i+1)}">${i+1}</td>${yrs.map(y=>`<td style="${i===0?"font-weight:700":""}">${HISTORY[y][i]?esc(cap(HISTORY[y][i])):""}</td>`).join("")}</tr>`).join("")}
   </tbody></table></div></div>`;
 }
 
