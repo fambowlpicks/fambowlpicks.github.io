@@ -123,8 +123,26 @@
   .quick a{display:block;text-align:center;padding:14px 10px;border-radius:10px;background:var(--black);color:#fff;text-decoration:none;font-family:var(--head);font-weight:600;letter-spacing:.05em;text-transform:uppercase}
   .quick a:hover{color:var(--gold)}
 
+  /* profile photos */
+  .av{display:inline-flex;align-items:center;justify-content:center;flex:none;width:40px;height:40px;border-radius:50%;overflow:hidden;vertical-align:middle;color:#fff;font-family:var(--head);font-weight:600;font-size:16px;letter-spacing:.02em;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.25);text-transform:uppercase}
+  .av img{width:100%;height:100%;object-fit:cover;display:block}
+  .av.xs{width:26px;height:26px;font-size:11px;border-width:1.5px}
+  .av.sm{width:32px;height:32px;font-size:13px}
+  .av.md{width:64px;height:64px;font-size:24px;border-width:3px}
+  .av.lg{width:96px;height:96px;font-size:36px;border-width:4px;box-shadow:0 0 0 3px var(--gold),0 2px 6px rgba(0,0,0,.25)}
+  .who{display:inline-flex;align-items:center;gap:10px}
+  .names a,.names button{gap:10px}
+  .names.faces a{flex-direction:column;gap:6px;padding:12px 8px}
+  .names.compact a{padding:6px 14px 6px 6px}
+  .grid thead th.pcol{text-align:center}
+  .grid thead th.pcol .av{margin-bottom:3px}
+  .member-head{display:flex;align-items:center;gap:16px;margin-bottom:14px}
+  .member-head h2{margin:0}
+  .hello .who{gap:8px}
+
   @media(max-width:700px){ .feed{grid-template-columns:1fr} }
-  @media(max-width:600px){ body{font-size:17px} .hide-sm{display:none} .brand span{font-size:21px} .names{grid-template-columns:repeat(2,1fr)} .stat .v{font-size:30px} }
+  @media(max-width:600px){ body{font-size:17px} .hide-sm{display:none} .brand span{font-size:21px} .names{grid-template-columns:repeat(2,1fr)} .stat .v{font-size:30px}
+    th,td{padding:9px 4px} th{font-size:11px;letter-spacing:.03em} .rank{width:34px;font-size:20px} .who{gap:6px} td .av.sm{width:28px;height:28px;font-size:12px} .names a{gap:6px;padding:8px 6px;font-size:17px;min-width:0} .names:not(.faces) .av:not(.sm){width:32px;height:32px;font-size:13px} }
 </style>
 </head>
 <body>
@@ -364,6 +382,19 @@ const lockText = () => META.lockAt ? "on " + new Date(META.lockAt).toLocaleStrin
 const TV_COLORS = {ABC:"#111214",ESPN:"#c8102e",ESPN2:"#c8102e",ESPNU:"#c8102e",ESPNEWS:"#c8102e",SECN:"#004b8d","SEC NETWORK":"#004b8d",ACCN:"#013ca6",CBS:"#0b3d91",FOX:"#002c5f",FS1:"#002c5f",NBC:"#5b2c83",TNT:"#d1001f",TBS:"#00205b",CW:"#00843d",PEACOCK:"#000000",AMAZON:"#146eb4",PRIME:"#146eb4",BTN:"#0088ce",TRUTV:"#e11b22",MAX:"#002be7",NETFLIX:"#e50914"};
 const tvBadge = tv => { const t=String(tv||"").trim(); if(!t) return `<span class="muted">—</span>`; const c=TV_COLORS[t.toUpperCase()]||"#55565c"; return `<span class="tv" style="background:${c}">${esc(t.toUpperCase())}</span>`; };
 
+// ---------- profile photos ----------
+// Photos live in the "photos" folder next to index.html, named after each person: photos/derrick.jpg
+// "Landon R" -> photos/landon_r.jpg. Anyone without a photo gets a colored circle with their initials.
+// If someone's name on the site doesn't match their photo's file name, add them here:
+const PHOTO_ALIASES = { nat: "natalie" };
+const AV_COLORS = ["#1b1b1f","#8c6d14","#1d7a3a","#0b3d91","#b3261e","#5b2c83","#0e7490","#9a3412"];
+const photoKey = n => { const k=String(n||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,""); return PHOTO_ALIASES[k]||k; };
+const initials = n => String(n||"").trim().split(/\s+/).map(w=>w[0]||"").join("").slice(0,2).toUpperCase();
+const avColor = n => { let h=0; for(const c of photoKey(n)) h=(h*31+c.charCodeAt(0))>>>0; return AV_COLORS[h%AV_COLORS.length]; };
+window.avFail = img => { const s=img.parentNode; s.textContent=s.dataset.i; };
+// size: "xs" | "sm" | "" | "md" | "lg"
+const avatar = (n, size="") => `<span class="av ${size}" style="background:${avColor(n)}" data-i="${esc(initials(n))}"><img src="photos/${encodeURIComponent(photoKey(n))}.jpg" alt="" onerror="avFail(this)"></span>`;
+
 // ---------- who am I (saved on this device) ----------
 let ME = store.get("pickem-me");
 const isMe = n => ME && same(ME,n);
@@ -380,7 +411,7 @@ function nav(active){
   document.getElementById("nav").innerHTML=links.map(([h,t])=>`<a href="${h}" class="${active===h?"on":""}">${t}</a>`).join("");
 }
 const rankCls = r => r===1?"r1":r===2?"r2":r===3?"r3":"";
-const personLink = n => `<a class="person" href="#/member/${nameKey(n)}">${esc(cap(n))}</a>`;
+const personLink = n => `<span class="who">${avatar(n,"sm")}<a class="person" href="#/member/${nameKey(n)}">${esc(cap(n))}</a></span>`;
 const btn = (href,text,cls="") => `<a class="btn ${cls}" href="${href}">${text}</a>`;
 
 function modeNote(){
@@ -393,14 +424,14 @@ function modeNote(){
 function hello(){
   const el=document.getElementById("hello");
   if(!ME){el.innerHTML="";return;}
-  el.innerHTML = `<span>Signed in as <a href="#/member/${nameKey(ME)}"><b>${esc(cap(ME))}</b></a></span><a href="javascript:void 0" onclick="switchMe()">Not you? Switch</a>`;
+  el.innerHTML = `<span class="who">${avatar(ME,"xs")}<span>Signed in as <a href="#/member/${nameKey(ME)}"><b>${esc(cap(ME))}</b></a></span></span><a href="javascript:void 0" onclick="switchMe()">Not you? Switch</a>`;
 }
 
 function submittedCard(){
   const sub = n => META.submitted.some(s=>same(s,n));
   const count = NAMES.filter(sub).length;
   return `<div class="card"><h2>Picks Turned In <span class="muted" style="font-size:18px">(${count} of ${NAMES.length})</span></h2>
-   <div class="names">${namesMeFirst().map(n=>`<a class="${sub(n)?"":"muted"}" style="${sub(n)?"border-color:var(--win)":""}" href="#/member/${nameKey(n)}">${sub(n)?"✓ ":""}${shown(n)}</a>`).join("")}</div>
+   <div class="names">${namesMeFirst().map(n=>`<a class="${sub(n)?"":"muted"}" style="${sub(n)?"border-color:var(--win)":""}" href="#/member/${nameKey(n)}">${avatar(n,"sm")}<span>${sub(n)?"✓ ":""}${shown(n)}</span></a>`).join("")}</div>
    <p class="muted small" style="margin-bottom:0">Everyone's picks show up once picks lock ${esc(lockText())}.</p></div>`;
 }
 
@@ -408,7 +439,7 @@ function submittedCard(){
 function viewWelcome(){
   return `<div class="welcome card"><h2>Welcome! Who Are You?</h2>
   <p>Select your name to view your account</p>
-  <div class="names">${NAMES.map((p,i)=>[p,i]).sort((x,y)=>x[0].localeCompare(y[0])).map(([p,i])=>`<a href="javascript:void 0" onclick="chooseMe(${i})">${esc(cap(p))}</a>`).join("")}</div></div>`;
+  <div class="names faces">${NAMES.map((p,i)=>[p,i]).sort((x,y)=>x[0].localeCompare(y[0])).map(([p,i])=>`<a href="javascript:void 0" onclick="chooseMe(${i})">${avatar(p,"md")}<span>${esc(cap(p))}</span></a>`).join("")}</div></div>`;
 }
 
 // ---------- HOME (feed) ----------
@@ -484,7 +515,7 @@ function viewLeaderboard(){
 // ---------- PICKS TAB ----------
 const allBtn = `<a class="all" href="#/picks">All</a>`;
 function nameButtons(active, compact){
-  return `<div class="names ${compact?"compact":""}">${namesMeFirst().map(p=>`<a class="${isMe(p)?"me":""} ${p===active&&!isMe(p)?"on":""}" href="#/member/${nameKey(p)}">${shown(p)}</a>`).join("")}${allBtn}</div>`;
+  return `<div class="names ${compact?"compact":""}">${namesMeFirst().map(p=>`<a class="${isMe(p)?"me":""} ${p===active&&!isMe(p)?"on":""}" href="#/member/${nameKey(p)}">${avatar(p,compact?"sm":"")}<span>${shown(p)}</span></a>`).join("")}${allBtn}</div>`;
 }
 function viewMembers(){
   return `${modeNote()}<div class="card"><h2>Picks</h2><p style="margin-top:0" class="muted">Choose a name to see their picks, or <b>All</b> to see everyone side by side.</p>${nameButtons(null)}</div>
@@ -515,7 +546,7 @@ function viewMember(rawName){
     `${subj} ${behind} points behind ${esc(cap(leader.name))}. Only ${me.remain} points are left, so first place is out of reach.`;
 
   return `${top}
-  <div class="card"><h2>${esc(cap(name))}</h2>
+  <div class="card"><div class="member-head">${avatar(name,"lg")}<h2>${esc(cap(name))}</h2></div>
    <div class="big">
     <div class="stat"><div class="v ${rankCls(me.rank)}">#${me.rank}</div><div class="l">Current rank</div></div>
     <div class="stat"><div class="v">${me.pts}</div><div class="l">Total points</div></div>
@@ -547,7 +578,7 @@ function viewPicks(){
   if(!META.locked) return `${modeNote()}<div class="card"><h2>Everyone's Picks</h2><p>Hidden until picks lock ${esc(lockText())}, so nobody can copy.</p>${btn("#/members","← Back To Picks","ghost")}</div>${games.length?submittedCard():""}`;
   const ps = players();
   return `<div class="card"><h2>Everyone's Picks</h2><p class="muted" style="margin-top:0">Green = right, red = wrong, gray = not played yet. Scroll sideways to see everyone.</p>
-  <div class="scroll"><table class="grid"><thead><tr><th>Date</th><th class="game">Game</th><th class="num">Points</th>${ps.map(p=>`<th class="${isMe(p)?"mycol":""}"><a href="#/member/${nameKey(p)}">${shown(p)}</a></th>`).join("")}</tr></thead><tbody>
+  <div class="scroll"><table class="grid"><thead><tr><th>Date</th><th class="game">Game</th><th class="num">Points</th>${ps.map(p=>`<th class="pcol ${isMe(p)?"mycol":""}"><a href="#/member/${nameKey(p)}">${avatar(p,"sm")}<br>${shown(p)}</a></th>`).join("")}</tr></thead><tbody>
   ${games.map(g=>`<tr><td>${esc(g.date)}</td><td class="game">${esc(g.a)} vs ${esc(g.h)}</td><td class="num">${g.pts}</td>${ps.map(p=>{const pk=pickOf(p,g);const c=!isDone(g)?"p":same(pk,g.winner)?"w":"x";return `<td class="${c} ${isMe(p)?"mycol":""}">${esc(pk)}</td>`;}).join("")}</tr>`).join("")}
   </tbody></table></div></div>`;
 }
@@ -564,9 +595,9 @@ function viewHistory(){
   const yrs=Object.keys(HISTORY).sort((a,b)=>b-a);
   const n=Math.max(...yrs.map(y=>HISTORY[y].length));
   return `<div class="card"><h2>Past Champions & Standings</h2>
-  <table><thead><tr><th class="num">#</th>${yrs.map(y=>`<th>${y}</th>`).join("")}</tr></thead><tbody>
-  ${Array.from({length:n},(_,i)=>`<tr><td class="rank ${rankCls(i+1)}">${i+1}</td>${yrs.map(y=>`<td style="${i===0?"font-weight:700":""}">${HISTORY[y][i]?esc(cap(HISTORY[y][i])):""}</td>`).join("")}</tr>`).join("")}
-  </tbody></table></div>`;
+  <div style="overflow-x:auto"><table><thead><tr><th class="num">#</th>${yrs.map(y=>`<th>${y}</th>`).join("")}</tr></thead><tbody>
+  ${Array.from({length:n},(_,i)=>`<tr><td class="rank ${rankCls(i+1)}">${i+1}</td>${yrs.map(y=>`<td style="${i===0?"font-weight:700":""}">${HISTORY[y][i]?`<span class="who" style="gap:8px"><span class="hide-sm">${avatar(HISTORY[y][i],"xs")}</span>${esc(cap(HISTORY[y][i]))}</span>`:""}</td>`).join("")}</tr>`).join("")}
+  </tbody></table></div></div>`;
 }
 
 // ---------- ADMIN (open by going to the site address + #/admin) ----------
