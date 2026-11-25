@@ -466,12 +466,23 @@ const tvBadge = tv => {
 // If someone's name on the site doesn't match their photo's file name, add them here:
 const PHOTO_ALIASES = { nat: "natalie", landon_d: "landon" };
 const AV_COLORS = ["#1b1b1f","#8c6d14","#1d7a3a","#0b3d91","#b3261e","#5b2c83","#0e7490","#9a3412"];
-const photoKey = n => { const k=String(n||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,""); return PHOTO_ALIASES[k]||k; };
+const rawKey = n => String(n||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"");
+const photoKey = n => { const k=rawKey(n); return PHOTO_ALIASES[k]||k; };
 const initials = n => String(n||"").trim().split(/\s+/).map(w=>w[0]||"").join("").slice(0,2).toUpperCase();
 const avColor = n => { let h=0; for(const c of photoKey(n)) h=(h*31+c.charCodeAt(0))>>>0; return AV_COLORS[h%AV_COLORS.length]; };
-window.avFail = img => { const s=img.parentNode; s.textContent=s.dataset.i; };
+// tries the person's own name first (landon_d.jpg), then the other name (landon.jpg),
+// each as .jpg, .jpeg, .png, .JPG, .PNG or no ending, then shows initials
+const PHOTO_EXTS = [".jpg",".jpeg",".png",".JPG",".JPEG",".PNG",".webp",""];
+window.avFail = img => {
+  const s=img.parentNode;
+  const keys=[s.dataset.k].concat(s.dataset.alt?[s.dataset.alt]:[]);
+  const tries=[]; keys.forEach(k=>PHOTO_EXTS.forEach(e=>tries.push(k+e)));
+  const n=(+img.dataset.n||0)+1;
+  if(n<tries.length){ img.dataset.n=n; img.src=tries[n]; return; }
+  s.textContent=s.dataset.i;
+};
 // size: "xs" | "sm" | "" | "md" | "lg"
-const avatar = (n, size="") => `<span class="av ${size}" style="background:${avColor(n)}" data-i="${esc(initials(n))}"><img src="${encodeURIComponent(photoKey(n))}.jpg" alt="" onerror="avFail(this)"></span>`;
+const avatar = (n, size="") => { const k=rawKey(n), a=PHOTO_ALIASES[k]; return `<span class="av ${size}" style="background:${avColor(n)}" data-i="${esc(initials(n))}" data-k="${encodeURIComponent(k)}"${a?` data-alt="${encodeURIComponent(a)}"`:""}><img src="${encodeURIComponent(k)}.jpg" alt="" onerror="avFail(this)"></span>`; };
 
 // ---------- who am I (saved on this device) ----------
 let ME = store.get("pickem-me");
